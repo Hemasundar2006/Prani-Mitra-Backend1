@@ -79,7 +79,7 @@ otpSchema.statics.generateOTP = function() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// Method to create new OTP
+// Method to create new OTP (for Twilio Verify, we don't generate our own OTP)
 otpSchema.statics.createOTP = async function(phoneNumber, purpose, metadata = {}) {
   try {
     // Invalidate any existing OTPs for this phone number and purpose
@@ -88,25 +88,24 @@ otpSchema.statics.createOTP = async function(phoneNumber, purpose, metadata = {}
       { isVerified: true } // Mark as verified to prevent reuse
     );
 
-    // Generate new OTP
-    const otpCode = this.generateOTP();
-    
+    // For Twilio Verify, we create a placeholder record
+    // The actual OTP is generated and sent by Twilio
     const otp = new this({
       phoneNumber,
-      otp: otpCode,
+      otp: '000000', // Placeholder - actual OTP is managed by Twilio
       purpose,
       metadata
     });
 
     await otp.save();
-    return { success: true, otp: otpCode, otpId: otp._id };
+    return { success: true, otp: 'TWILIO_MANAGED', otpId: otp._id };
   } catch (error) {
     console.error('Error creating OTP:', error);
     return { success: false, error: error.message };
   }
 };
 
-// Method to verify OTP
+// Method to verify OTP (using Twilio Verify)
 otpSchema.statics.verifyOTP = async function(phoneNumber, otpCode, purpose) {
   try {
     const otpRecord = await this.findOne({
@@ -130,20 +129,61 @@ otpSchema.statics.verifyOTP = async function(phoneNumber, otpCode, purpose) {
     // Increment attempts
     otpRecord.attempts += 1;
 
-    if (otpRecord.otp !== otpCode) {
+    // Use Twilio Verify service to check OTP
+    const { verifyOTP } = require('../services/smsService');
+    
+    // For Twilio Verify, we need to verify with Twilio service
+    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+      const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+      const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || 'VA694aaa79bb0ac0cb447d2a18b7859f2f';
+      
+      try {
+        const verificationCheck = await twilio.verify.v2
+          .services(verifyServiceSid)
+          .verificationChecks
+          .create({
+            to: `+91${phoneNumber}`,
+            code: otpCode
+          });
+
+        if (verificationCheck.status === 'approved') {
+          // Mark as verified
+          otpRecord.isVerified = true;
+          await otpRecord.save();
+          return { success: true, message: 'OTP verified successfully' };
+        } else {
+          await otpRecord.save();
+          return { 
+            success: false, 
+            message: 'Invalid OTP',
+            attemptsLeft: 3 - otpRecord.attempts
+          };
+        }
+      } catch (twilioError) {
+        console.error('Twilio verification error:', twilioError);
+        await otpRecord.save();
+        return { 
+          success: false, 
+          message: 'Invalid OTP',
+          attemptsLeft: 3 - otpRecord.attempts
+        };
+      }
+    } else {
+      // Fallback for development/testing without Twilio
+      if (otpRecord.otp !== otpCode) {
+        await otpRecord.save();
+        return { 
+          success: false, 
+          message: 'Invalid OTP',
+          attemptsLeft: 3 - otpRecord.attempts
+        };
+      }
+
+      // Mark as verified
+      otpRecord.isVerified = true;
       await otpRecord.save();
-      return { 
-        success: false, 
-        message: 'Invalid OTP',
-        attemptsLeft: 3 - otpRecord.attempts
-      };
+      return { success: true, message: 'OTP verified successfully' };
     }
-
-    // Mark as verified
-    otpRecord.isVerified = true;
-    await otpRecord.save();
-
-    return { success: true, message: 'OTP verified successfully' };
   } catch (error) {
     console.error('Error verifying OTP:', error);
     return { success: false, error: error.message };

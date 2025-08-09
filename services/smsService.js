@@ -91,12 +91,13 @@ class MSG91Service {
   }
 }
 
-// Twilio SMS Service (Alternative)
+// Twilio SMS Service with Verify API
 class TwilioService {
   constructor() {
     this.accountSid = process.env.TWILIO_ACCOUNT_SID;
     this.authToken = process.env.TWILIO_AUTH_TOKEN;
     this.phoneNumber = process.env.TWILIO_PHONE_NUMBER;
+    this.verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || 'VA694aaa79bb0ac0cb447d2a18b7859f2f';
     
     if (this.accountSid && this.authToken) {
       this.client = require('twilio')(this.accountSid, this.authToken);
@@ -130,8 +131,60 @@ class TwilioService {
   }
 
   async sendOTP(phoneNumber, otp) {
-    const message = `Your Prani Mitra verification code is ${otp}. Valid for 10 minutes. Do not share with anyone.`;
-    return this.sendSMS(phoneNumber, message);
+    try {
+      if (!this.client) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      // Use Twilio Verify service to send OTP
+      const verification = await this.client.verify.v2
+        .services(this.verifyServiceSid)
+        .verifications
+        .create({
+          to: `+91${phoneNumber}`,
+          channel: 'sms'
+        });
+
+      return {
+        success: true,
+        messageId: verification.sid,
+        response: verification
+      };
+    } catch (error) {
+      console.error('Twilio Verify OTP Error:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  async verifyOTP(phoneNumber, otp) {
+    try {
+      if (!this.client) {
+        throw new Error('Twilio client not initialized');
+      }
+
+      const verificationCheck = await this.client.verify.v2
+        .services(this.verifyServiceSid)
+        .verificationChecks
+        .create({
+          to: `+91${phoneNumber}`,
+          code: otp
+        });
+
+      return {
+        success: verificationCheck.status === 'approved',
+        status: verificationCheck.status,
+        response: verificationCheck
+      };
+    } catch (error) {
+      console.error('Twilio Verify Check Error:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
   }
 
   async getDeliveryStatus(messageId) {
