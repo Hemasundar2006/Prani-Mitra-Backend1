@@ -10,10 +10,23 @@ const app = express();
 
 // Security middleware
 app.use(helmet());
+
+// CORS Configuration
 app.use(cors({
-  origin: process.env.FRONTEND_URL || '*',
+  origin: [
+    "http://localhost:3000", // development
+    "http://localhost:3001", // alternative development port
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    process.env.FRONTEND_URL // production or custom URL
+  ].filter(Boolean), // Remove any undefined values
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true
 }));
+
+// Preflight handling
+app.options("*", cors());
 
 // Rate limiting
 const limiter = rateLimit({
