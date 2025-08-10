@@ -78,25 +78,40 @@ const handleValidationErrors = (req, res, next) => {
 router.post('/send-otp', otpRateLimit, validatePhoneNumber, handleValidationErrors, async (req, res) => {
   try {
     const { phoneNumber, purpose = 'login' } = req.body;
+    
+    // Normalize phone number (remove any spaces, dashes, etc.)
+    const phone = phoneNumber.replace(/\D/g, '');
+    
+    // Additional validation for normalized phone
+    if (!/^[6-9]\d{9}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number format',
+        code: 'INVALID_PHONE_FORMAT'
+      });
+    }
+
     const metadata = {
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
-      source: req.get('X-Source') || 'web'
+      source: req.get('X-Source') || 'web',
+      timestamp: new Date().toISOString()
     };
 
     // Check if there's a recent OTP request
-    const hasRecentOTP = await OTP.hasRecentOTP(phoneNumber, purpose);
+    const hasRecentOTP = await OTP.hasRecentOTP(phone, purpose);
     if (hasRecentOTP) {
       return res.status(429).json({
         success: false,
         message: 'Please wait before requesting another OTP',
-        code: 'RECENT_OTP_EXISTS'
+        code: 'RECENT_OTP_EXISTS',
+        retryAfter: 60 // seconds
       });
     }
 
     // For registration, check if user already exists
     if (purpose === 'registration') {
-      const existingUser = await User.findOne({ phoneNumber });
+      const existingUser = await User.findOne({ phoneNumber: phone });
       if (existingUser) {
         return res.status(409).json({
           success: false,
@@ -108,7 +123,7 @@ router.post('/send-otp', otpRateLimit, validatePhoneNumber, handleValidationErro
 
     // For login, check if user exists
     if (purpose === 'login') {
-      const user = await User.findOne({ phoneNumber });
+      const user = await User.findOne({ phoneNumber: phone });
       if (!user) {
         return res.status(404).json({
           success: false,
@@ -127,48 +142,62 @@ router.post('/send-otp', otpRateLimit, validatePhoneNumber, handleValidationErro
     }
 
     // Create OTP
-    const otpResult = await OTP.createOTP(phoneNumber, purpose, metadata);
+    const otpResult = await OTP.createOTP(phone, purpose, metadata);
     if (!otpResult.success) {
+      console.error('OTP creation failed:', otpResult.error);
       return res.status(500).json({
         success: false,
         message: 'Failed to generate OTP',
-        error: otpResult.error
+        code: 'OTP_CREATION_FAILED'
       });
     }
 
-    // Send SMS
-    const smsResult = await sendOTP(phoneNumber, otpResult.otp);
+    // Send SMS using normalized phone number
+    const smsResult = await sendOTP(phone, otpResult.otp);
     
     // Update OTP record with SMS details
-    await OTP.findByIdAndUpdate(otpResult.otpId, {
-      'smsDetails.messageId': smsResult.messageId,
-      'smsDetails.status': smsResult.success ? 'sent' : 'failed',
-      'smsDetails.sentAt': new Date()
-    });
+    if (otpResult.otpId) {
+      await OTP.findByIdAndUpdate(otpResult.otpId, {
+        'smsDetails.messageId': smsResult.messageId || null,
+        'smsDetails.status': smsResult.success ? 'sent' : 'failed',
+        'smsDetails.sentAt': new Date(),
+        'smsDetails.provider': smsResult.provider || 'unknown',
+        'smsDetails.errorMessage': smsResult.error || null
+      });
+    }
 
     if (!smsResult.success) {
+      console.error('SMS sending failed:', smsResult.error);
       return res.status(500).json({
         success: false,
         message: 'Failed to send OTP',
-        code: 'SMS_FAILED'
+        code: 'SMS_FAILED',
+        error: process.env.NODE_ENV === 'development' ? smsResult.error : undefined
       });
     }
+
+    // Log successful OTP send
+    console.log(`✅ OTP sent successfully to ${phone} for ${purpose}`);
 
     res.status(200).json({
       success: true,
       message: 'OTP sent successfully',
       data: {
-        phoneNumber,
+        phoneNumber: phone,
+        purpose,
         expiresIn: 600, // 10 minutes in seconds
-        messageId: smsResult.messageId
+        messageId: smsResult.messageId,
+        provider: smsResult.provider
       }
     });
 
   } catch (error) {
-    console.error('Send OTP error:', error);
+    console.error('❌ Send OTP error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to send OTP'
+      message: 'Failed to send OTP',
+      code: 'INTERNAL_SERVER_ERROR',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });

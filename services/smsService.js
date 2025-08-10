@@ -217,19 +217,34 @@ class TwilioService {
 class SMSService {
   constructor() {
     // Determine which service to use based on environment variables
-    if (process.env.MSG91_API_KEY) {
-      this.provider = new MSG91Service();
-      this.providerName = 'MSG91';
-    } else if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+    // Check if MSG91 is properly configured (not placeholder)
+    const hasMSG91 = process.env.MSG91_API_KEY && 
+                     process.env.MSG91_API_KEY !== 'your_msg91_api_key' && 
+                     process.env.MSG91_API_KEY.length > 10;
+    
+    // Check if Twilio is properly configured
+    const hasTwilio = process.env.TWILIO_ACCOUNT_SID && 
+                      process.env.TWILIO_AUTH_TOKEN &&
+                      process.env.TWILIO_ACCOUNT_SID.startsWith('AC') &&
+                      process.env.TWILIO_AUTH_TOKEN.length > 20;
+    
+    if (hasTwilio) {
       this.provider = new TwilioService();
       this.providerName = 'Twilio';
+      console.log('✅ Twilio SMS service configured');
+    } else if (hasMSG91) {
+      this.provider = new MSG91Service();
+      this.providerName = 'MSG91';
+      console.log('✅ MSG91 SMS service configured');
     } else {
-      console.warn('No SMS service configured. Using mock service.');
+      console.warn('⚠️  No SMS service properly configured. Using mock service.');
+      console.warn('MSG91 configured:', hasMSG91);
+      console.warn('Twilio configured:', hasTwilio);
       this.provider = new MockSMSService();
       this.providerName = 'Mock';
     }
     
-    console.log(`SMS Service initialized with provider: ${this.providerName}`);
+    console.log(`📱 SMS Service initialized with provider: ${this.providerName}`);
   }
 
   async sendSMS(phoneNumber, message, templateId = null) {
@@ -238,8 +253,14 @@ class SMSService {
   }
 
   async sendOTP(phoneNumber, otp) {
-    console.log(`Sending OTP via ${this.providerName} to ${phoneNumber}`);
-    return this.provider.sendOTP(phoneNumber, otp);
+    console.log(`📤 Sending OTP via ${this.providerName} to ${phoneNumber}`);
+    const result = await this.provider.sendOTP(phoneNumber, otp);
+    
+    // Add provider info to response
+    return {
+      ...result,
+      provider: this.providerName
+    };
   }
 
   async getDeliveryStatus(messageId) {
