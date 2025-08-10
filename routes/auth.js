@@ -94,8 +94,7 @@ router.post('/send-otp', otpRateLimit, validatePhoneNumber, handleValidationErro
     const metadata = {
       ipAddress: req.ip,
       userAgent: req.get('User-Agent'),
-      source: req.get('X-Source') || 'web',
-      timestamp: new Date().toISOString()
+      source: req.get('X-Source') || 'web'
     };
 
     // Check if there's a recent OTP request

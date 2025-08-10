@@ -49,7 +49,8 @@ const otpSchema = new mongoose.Schema({
       type: String,
       enum: ['web', 'mobile', 'api'],
       default: 'web'
-    }
+    },
+    timestamp: String
   },
   createdAt: {
     type: Date,
@@ -79,7 +80,7 @@ otpSchema.statics.generateOTP = function() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
-// Method to create new OTP (for Twilio Verify, we don't generate our own OTP)
+// Method to create new OTP with real 6-digit code
 otpSchema.statics.createOTP = async function(phoneNumber, purpose, metadata = {}) {
   try {
     // Invalidate any existing OTPs for this phone number and purpose
@@ -88,17 +89,20 @@ otpSchema.statics.createOTP = async function(phoneNumber, purpose, metadata = {}
       { isVerified: true } // Mark as verified to prevent reuse
     );
 
-    // For Twilio Verify, we create a placeholder record
-    // The actual OTP is generated and sent by Twilio
+    // Generate a real 6-digit OTP
+    const generatedOTP = this.generateOTP();
+    
     const otp = new this({
       phoneNumber,
-      otp: '000000', // Placeholder - actual OTP is managed by Twilio
+      otp: generatedOTP,
       purpose,
       metadata
     });
 
     await otp.save();
-    return { success: true, otp: 'TWILIO_MANAGED', otpId: otp._id };
+    console.log(`🔢 Generated OTP ${generatedOTP} for ${phoneNumber}`);
+    
+    return { success: true, otp: generatedOTP, otpId: otp._id };
   } catch (error) {
     console.error('Error creating OTP:', error);
     return { success: false, error: error.message };
@@ -132,10 +136,12 @@ otpSchema.statics.verifyOTP = async function(phoneNumber, otpCode, purpose) {
     // Use Twilio Verify service to check OTP
     const { verifyOTP } = require('../services/smsService');
     
-    // For Twilio Verify, we need to verify with Twilio service
-    if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+    // For Twilio Verify, we need to verify with Twilio service (only if credentials are valid)
+    if (process.env.TWILIO_ACCOUNT_SID && 
+        process.env.TWILIO_AUTH_TOKEN && 
+        process.env.TWILIO_ACCOUNT_SID.startsWith('AC')) {
       const twilio = require('twilio')(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-      const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || 'VA694aaa79bb0ac0cb447d2a18b7859f2f';
+      const verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID;
       
       try {
         const verificationCheck = await twilio.verify.v2
