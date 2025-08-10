@@ -1,128 +1,34 @@
-const axios = require('axios');
+// SMS Service - Using only Twilio and Mock services
 
-// MSG91 SMS Service
-class MSG91Service {
-  constructor() {
-    this.apiKey = process.env.MSG91_API_KEY;
-    this.senderId = process.env.MSG91_SENDER_ID || 'PRANMT';
-    this.route = process.env.MSG91_ROUTE || '4';
-    this.baseUrl = 'https://api.msg91.com/api';
-  }
+// Import the production Twilio service
+const productionSMS = require('./send_sms');
 
-  async sendSMS(phoneNumber, message, templateId = null) {
-    try {
-      const data = {
-        sender: this.senderId,
-        route: this.route,
-        country: '91',
-        sms: [{
-          message: message,
-          to: [phoneNumber]
-        }]
-      };
-
-      if (templateId) {
-        data.template_id = templateId;
-      }
-
-      const response = await axios.post(`${this.baseUrl}/sendhttp.php`, data, {
-        headers: {
-          'authkey': this.apiKey,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      return {
-        success: response.data.type === 'success',
-        messageId: response.data.message || 'unknown',
-        response: response.data
-      };
-    } catch (error) {
-      console.error('MSG91 SMS Error:', error.response?.data || error.message);
-      return {
-        success: false,
-        error: error.response?.data || error.message
-      };
-    }
-  }
-
-  async sendOTP(phoneNumber, otp) {
-    try {
-      const response = await axios.post(`${this.baseUrl}/sendotp.php`, {
-        authkey: this.apiKey,
-        mobile: phoneNumber,
-        otp: otp,
-        sender: this.senderId,
-        message: `Your Prani Mitra verification code is ${otp}. Valid for 10 minutes. Do not share with anyone.`
-      });
-
-      return {
-        success: response.data.type === 'success',
-        messageId: response.data.message || 'unknown',
-        response: response.data
-      };
-    } catch (error) {
-      console.error('MSG91 OTP Error:', error.response?.data || error.message);
-      return {
-        success: false,
-        error: error.response?.data || error.message
-      };
-    }
-  }
-
-  async getDeliveryStatus(messageId) {
-    try {
-      const response = await axios.post(`${this.baseUrl}/status.php`, {
-        authkey: this.apiKey,
-        message_id: messageId
-      });
-
-      return {
-        success: true,
-        status: response.data
-      };
-    } catch (error) {
-      console.error('MSG91 Status Error:', error.response?.data || error.message);
-      return {
-        success: false,
-        error: error.response?.data || error.message
-      };
-    }
-  }
-}
-
-// Twilio SMS Service with Verify API
+// Twilio SMS Service
 class TwilioService {
   constructor() {
     this.accountSid = process.env.TWILIO_ACCOUNT_SID;
     this.authToken = process.env.TWILIO_AUTH_TOKEN;
     this.phoneNumber = process.env.TWILIO_PHONE_NUMBER;
-    this.verifyServiceSid = process.env.TWILIO_VERIFY_SERVICE_SID || 'VA694aaa79bb0ac0cb447d2a18b7859f2f';
     
-    if (this.accountSid && this.authToken) {
+    if (this.accountSid && this.authToken && this.accountSid.startsWith('AC')) {
       this.client = require('twilio')(this.accountSid, this.authToken);
+      console.log('✅ TwilioService initialized with production SMS');
+    } else {
+      console.warn('⚠️ TwilioService: Invalid credentials, will use fallback');
     }
   }
 
-  async sendSMS(phoneNumber, message) {
+  async sendSMS(phoneNumber, purpose) {
     try {
-      if (!this.client) {
-        throw new Error('Twilio client not initialized');
-      }
-
-      const response = await this.client.messages.create({
-        body: message,
-        from: this.phoneNumber,
-        to: `+91${phoneNumber}`
-      });
-
+      // Use the production SMS service
+      const result = await productionSMS.sendSMS(phoneNumber, purpose);
       return {
-        success: true,
-        messageId: response.sid,
-        response: response
+        success: result.success,
+        messageId: result.messageId,
+        response: result
       };
     } catch (error) {
-      console.error('Twilio SMS Error:', error.message);
+      console.error('❌ Twilio SMS Error:', error.message);
       return {
         success: false,
         error: error.message
@@ -132,26 +38,15 @@ class TwilioService {
 
   async sendOTP(phoneNumber, otp) {
     try {
-      if (!this.client) {
-        throw new Error('Twilio client not initialized');
-      }
-
-      // Use Twilio Verify service to send OTP
-      const verification = await this.client.verify.v2
-        .services(this.verifyServiceSid)
-        .verifications
-        .create({
-          to: `+91${phoneNumber}`,
-          channel: 'sms'
-        });
-
+      // Use the production SMS service for OTP
+      const result = await productionSMS.sendOTP(phoneNumber, otp);
       return {
-        success: true,
-        messageId: verification.sid,
-        response: verification
+        success: result.success,
+        messageId: result.messageId,
+        response: result
       };
     } catch (error) {
-      console.error('Twilio Verify OTP Error:', error.message);
+      console.error('❌ Twilio OTP Error:', error.message);
       return {
         success: false,
         error: error.message
@@ -160,31 +55,14 @@ class TwilioService {
   }
 
   async verifyOTP(phoneNumber, otp) {
-    try {
-      if (!this.client) {
-        throw new Error('Twilio client not initialized');
-      }
-
-      const verificationCheck = await this.client.verify.v2
-        .services(this.verifyServiceSid)
-        .verificationChecks
-        .create({
-          to: `+91${phoneNumber}`,
-          code: otp
-        });
-
-      return {
-        success: verificationCheck.status === 'approved',
-        status: verificationCheck.status,
-        response: verificationCheck
-      };
-    } catch (error) {
-      console.error('Twilio Verify Check Error:', error.message);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
+    // Since we're using direct SMS instead of Twilio Verify,
+    // OTP verification is handled by our local OTP model
+    console.log('🔍 Twilio OTP verification delegated to local system');
+    return {
+      success: true,
+      status: 'local_verification',
+      message: 'OTP verification handled by local system'
+    };
   }
 
   async getDeliveryStatus(messageId) {
@@ -216,12 +94,7 @@ class TwilioService {
 // SMS Service Factory
 class SMSService {
   constructor() {
-    // Determine which service to use based on environment variables
-    // Check if MSG91 is properly configured (not placeholder)
-    const hasMSG91 = process.env.MSG91_API_KEY && 
-                     process.env.MSG91_API_KEY !== 'your_msg91_api_key' && 
-                     process.env.MSG91_API_KEY.length > 10;
-    
+    // Determine which service to use - only Twilio or Mock
     // Check if Twilio is properly configured
     const hasTwilio = process.env.TWILIO_ACCOUNT_SID && 
                       process.env.TWILIO_AUTH_TOKEN &&
@@ -232,13 +105,8 @@ class SMSService {
       this.provider = new TwilioService();
       this.providerName = 'Twilio';
       console.log('✅ Twilio SMS service configured');
-    } else if (hasMSG91) {
-      this.provider = new MSG91Service();
-      this.providerName = 'MSG91';
-      console.log('✅ MSG91 SMS service configured');
     } else {
-      console.warn('⚠️  No SMS service properly configured. Using mock service.');
-      console.warn('MSG91 configured:', hasMSG91);
+      console.warn('⚠️  Twilio not configured. Using mock service for development.');
       console.warn('Twilio configured:', hasTwilio);
       this.provider = new MockSMSService();
       this.providerName = 'Mock';
@@ -247,9 +115,9 @@ class SMSService {
     console.log(`📱 SMS Service initialized with provider: ${this.providerName}`);
   }
 
-  async sendSMS(phoneNumber, message, templateId = null) {
+  async sendSMS(phoneNumber, purpose, templateId = null) {
     console.log(`Sending SMS via ${this.providerName} to ${phoneNumber}`);
-    return this.provider.sendSMS(phoneNumber, message, templateId);
+    return this.provider.sendSMS(phoneNumber, purpose, templateId);
   }
 
   async sendOTP(phoneNumber, otp) {
@@ -306,10 +174,10 @@ class SMSService {
 
 // Mock SMS Service for development
 class MockSMSService {
-  async sendSMS(phoneNumber, message, templateId = null) {
+  async sendSMS(phoneNumber, purpose, templateId = null) {
     console.log('=== MOCK SMS ===');
     console.log(`To: ${phoneNumber}`);
-    console.log(`Message: ${message}`);
+    console.log(`Message: ${purpose}`);
     if (templateId) console.log(`Template ID: ${templateId}`);
     console.log('================');
     
@@ -346,7 +214,7 @@ const smsService = new SMSService();
 
 // Export functions
 module.exports = {
-  sendSMS: (phoneNumber, message, templateId) => smsService.sendSMS(phoneNumber, message, templateId),
+  sendSMS: (phoneNumber, purpose, templateId) => smsService.sendSMS(phoneNumber, purpose, templateId),
   sendOTP: (phoneNumber, otp) => smsService.sendOTP(phoneNumber, otp),
   sendCallSummary: (phoneNumber, callSummary) => smsService.sendCallSummary(phoneNumber, callSummary),
   sendSubscriptionNotification: (phoneNumber, type, data) => smsService.sendSubscriptionNotification(phoneNumber, type, data),
