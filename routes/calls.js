@@ -4,7 +4,7 @@ const User = require('../models/User');
 const Call = require('../models/Call');
 const Plan = require('../models/Plan');
 const { authenticateToken, requireActiveSubscription, requireAdminOrSupport, callRateLimit } = require('../middleware/auth');
-const { sendCallSummary, sendEmergencyAlert } = require('../services/smsService');
+// SMS services removed - using password-based authentication
 const router = express.Router();
 
 // Helper function to handle validation errors
@@ -290,37 +290,13 @@ router.put('/:callId/complete', authenticateToken, [
 
     await call.save();
 
-    // Send SMS summary if user has SMS notifications enabled
-    if (call.userId.preferences?.notifications?.sms !== false) {
-      try {
-        const summary = call.generateSMSSummary();
-        const smsResult = await sendCallSummary(call.phoneNumber, summary);
-        
-        call.sms = {
-          sent: smsResult.success,
-          sentAt: smsResult.success ? new Date() : null,
-          messageId: smsResult.messageId || null,
-          summary: summary,
-          deliveryStatus: smsResult.success ? 'sent' : 'failed'
-        };
-        
-        await call.save();
-      } catch (smsError) {
-        console.error('SMS summary error:', smsError);
-        // Don't fail the call completion if SMS fails
-      }
-    }
+    // SMS summary removed - call completed successfully
+    console.log(`✅ Call completed for user ${call.phoneNumber}`);
 
     // Handle emergency cases
     if (call.isEmergency) {
-      try {
-        await sendEmergencyAlert(
-          call.phoneNumber,
-          `Emergency consultation completed. Response: ${response.text.substring(0, 100)}...`
-        );
-      } catch (emergencyError) {
-        console.error('Emergency alert error:', emergencyError);
-      }
+      // Emergency alerts removed - logging emergency completion
+      console.log(`🚨 Emergency call completed for ${call.phoneNumber}`);
     }
 
     res.status(200).json({
@@ -490,27 +466,15 @@ router.post('/:callId/resend-sms', authenticateToken, async (req, res) => {
       });
     }
 
-    // Generate and send SMS summary
-    const summary = call.generateSMSSummary();
-    const smsResult = await sendCallSummary(call.phoneNumber, summary);
-    
-    // Update SMS details
-    call.sms = {
-      sent: smsResult.success,
-      sentAt: smsResult.success ? new Date() : call.sms?.sentAt,
-      messageId: smsResult.messageId || call.sms?.messageId,
-      summary: summary,
-      deliveryStatus: smsResult.success ? 'sent' : 'failed'
-    };
-    
-    await call.save();
+    // SMS functionality removed - call summary available in response
+    console.log(`📱 SMS resend requested for call ${call._id} - functionality removed`);
 
     res.status(200).json({
-      success: smsResult.success,
-      message: smsResult.success ? 'SMS sent successfully' : 'Failed to send SMS',
+      success: false,
+      message: 'SMS functionality has been removed - using password-based authentication',
       data: {
-        smsStatus: call.sms.deliveryStatus,
-        sentAt: call.sms.sentAt
+        callId: call._id,
+        summary: call.generateSMSSummary()
       }
     });
 

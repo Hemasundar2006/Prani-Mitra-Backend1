@@ -7,7 +7,7 @@ const Voucher = require('../models/Voucher');
 const Plan = require('../models/Plan');
 const Content = require('../models/Content');
 const { authenticateToken, requireAdmin, requireAdminOrSupport } = require('../middleware/auth');
-const { sendSubscriptionNotification } = require('../services/smsService');
+// SMS notifications removed - using password-based authentication
 const router = express.Router();
 
 // Helper function to handle validation errors
@@ -606,13 +606,10 @@ router.put('/users/:userId/subscription', authenticateToken, requireAdmin, [
           notificationType = 'expired';
         }
 
-        await sendSubscriptionNotification(
-          user.phoneNumber,
-          notificationType,
-          notificationData
-        );
-      } catch (smsError) {
-        console.error('SMS notification error:', smsError);
+        // SMS notifications removed - subscription status updated
+        console.log(`✅ Subscription ${notificationType} for user ${user.phoneNumber}`);
+      } catch (error) {
+        console.error('Subscription update error:', error);
       }
     }
 

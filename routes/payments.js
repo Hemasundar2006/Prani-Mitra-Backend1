@@ -6,7 +6,7 @@ const Payment = require('../models/Payment');
 const Voucher = require('../models/Voucher');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const razorpayService = require('../services/razorpayService');
-const { sendSubscriptionNotification } = require('../services/smsService');
+// SMS notifications removed - using password-based authentication
 const router = express.Router();
 
 // Helper function to handle validation errors
@@ -316,17 +316,8 @@ router.post('/verify', authenticateToken, [
       };
       await user.save();
 
-      // Send SMS notification
-      try {
-        await sendSubscriptionNotification(
-          user.phoneNumber,
-          'activation',
-          { plan: payment.planId.name }
-        );
-      } catch (smsError) {
-        console.error('SMS notification error:', smsError);
-        // Don't fail the payment verification if SMS fails
-      }
+      // SMS notifications removed - subscription activated successfully
+      console.log(`✅ Subscription activated for user ${user.phoneNumber}: ${payment.planId.name}`);
 
       res.status(200).json({
         success: true,
