@@ -327,7 +327,7 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
     res.status(500).json({
       success: false,
       message: 'Registration failed',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'production' ? error.message : undefined
     });
   }
 });
@@ -416,7 +416,7 @@ router.post('/login', loginRateLimit, validateLogin, handleValidationErrors, asy
     res.status(500).json({
       success: false,
       message: 'Login failed',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      error: process.env.NODE_ENV === 'production' ? error.message : undefined
     });
   }
 });
