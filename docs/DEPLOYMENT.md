@@ -26,7 +26,6 @@ This guide covers various deployment options for the Prani Mitra Backend API.
 
 ### External Services
 - **Razorpay Account**: For payment processing
-- **SMS Service**: MSG91 or Twilio account
 - **Domain & SSL**: For production deployment
 - **Cloud Storage** (optional): For file uploads
 
@@ -67,15 +66,7 @@ RAZORPAY_KEY_ID=rzp_live_your_key_id
 RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
 
-# SMS Service (MSG91)
-MSG91_API_KEY=your_msg91_api_key
-MSG91_SENDER_ID=PRANMT
-MSG91_ROUTE=4
-
-# Alternative: Twilio
-TWILIO_ACCOUNT_SID=your_twilio_account_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_PHONE_NUMBER=+1234567890
+# SMS Services removed - using password authentication
 
 # Cloudinary (for file uploads)
 CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name

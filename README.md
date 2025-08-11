@@ -10,7 +10,7 @@ A comprehensive backend API for Prani Mitra - a rural-focused AI service platfor
 - **Call Management**: Voice call logging, AI response tracking, SMS summaries
 - **Content Management**: Multilingual FAQs, tips, blogs, and guides
 - **Admin Panel**: Comprehensive admin APIs for user and system management
-- **SMS Integration**: MSG91/Twilio integration for OTP and notifications
+- **Password Authentication**: Secure password-based authentication system
 - **Voucher System**: Discount codes and promotional offers
 - **Analytics**: Detailed usage and performance analytics
 
@@ -19,7 +19,7 @@ A comprehensive backend API for Prani Mitra - a rural-focused AI service platfor
 - Node.js (v16.0.0 or higher)
 - MongoDB (v4.4 or higher)
 - Razorpay account (for payments)
-- MSG91 or Twilio account (for SMS)
+- Password-based authentication (no SMS required)
 
 ## 🛠️ Installation
 
@@ -56,9 +56,7 @@ A comprehensive backend API for Prani Mitra - a rural-focused AI service platfor
    RAZORPAY_KEY_ID=your_razorpay_key_id
    RAZORPAY_KEY_SECRET=your_razorpay_key_secret
 
-   # SMS Service (MSG91)
-   MSG91_API_KEY=your_msg91_api_key
-   MSG91_SENDER_ID=PRANMT
+   # SMS Services removed - using password authentication
 
    # Other configurations...
    ```
@@ -465,8 +463,7 @@ pm2 monit
 | `JWT_SECRET` | JWT signing secret | Yes |
 | `RAZORPAY_KEY_ID` | Razorpay key ID | Yes |
 | `RAZORPAY_KEY_SECRET` | Razorpay key secret | Yes |
-| `MSG91_API_KEY` | MSG91 API key | Yes |
-| `MSG91_SENDER_ID` | SMS sender ID | No (default: PRANMT) |
+
 | `TOLL_FREE_NUMBER` | Toll-free number for calls | No |
 
 ## 🤝 Contributing
@@ -489,5 +486,5 @@ For support, email support@pranimitra.com or create an issue in the repository.
 
 - MongoDB for database solutions
 - Razorpay for payment processing
-- MSG91/Twilio for SMS services
+- Password-based authentication system
 - Express.js community for the excellent framework
