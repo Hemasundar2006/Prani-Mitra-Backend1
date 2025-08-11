@@ -175,16 +175,16 @@ const createRateLimit = (windowMs, max, message) => {
 };
 
 // Specific rate limits
-const otpRateLimit = createRateLimit(
-  15 * 60 * 1000, // 15 minutes
-  5, // 5 OTP requests per 15 minutes
-  'Too many OTP requests. Please try again later.'
-);
-
 const loginRateLimit = createRateLimit(
   15 * 60 * 1000, // 15 minutes
   10, // 10 login attempts per 15 minutes
   'Too many login attempts. Please try again later.'
+);
+
+const registerRateLimit = createRateLimit(
+  60 * 60 * 1000, // 1 hour
+  5, // 5 registration attempts per hour
+  'Too many registration attempts. Please try again later.'
 );
 
 const callRateLimit = createRateLimit(
@@ -200,7 +200,7 @@ module.exports = {
   requireAdminOrSupport,
   requireActiveSubscription,
   optionalAuth,
-  otpRateLimit,
   loginRateLimit,
+  registerRateLimit,
   callRateLimit
 };

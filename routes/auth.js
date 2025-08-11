@@ -1,9 +1,7 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
-const OTP = require('../models/OTP');
-const { generateToken, otpRateLimit, loginRateLimit } = require('../middleware/auth');
-const { sendOTP } = require('../services/smsService');
+const { generateToken, loginRateLimit, registerRateLimit } = require('../middleware/auth');
 const router = express.Router();
 
 // Validation middleware
@@ -13,15 +11,15 @@ const validatePhoneNumber = [
     .withMessage('Please enter a valid Indian mobile number (10 digits starting with 6-9)')
 ];
 
-const validateOTP = [
-  body('otp')
-    .isLength({ min: 6, max: 6 })
-    .isNumeric()
-    .withMessage('OTP must be a 6-digit number')
+const validatePassword = [
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
 ];
 
 const validateRegistration = [
   ...validatePhoneNumber,
+  ...validatePassword,
   body('name')
     .trim()
     .isLength({ min: 2, max: 100 })
@@ -59,6 +57,11 @@ const validateRegistration = [
     .withMessage('Invalid farming type')
 ];
 
+const validateLogin = [
+  ...validatePhoneNumber,
+  ...validatePassword
+];
+
 // Helper function to handle validation errors
 const handleValidationErrors = (req, res, next) => {
   const errors = validationResult(req);
@@ -72,155 +75,18 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
-// @route   POST /api/auth/send-otp
-// @desc    Send OTP to phone number
-// @access  Public
-router.post('/send-otp', otpRateLimit, validatePhoneNumber, handleValidationErrors, async (req, res) => {
-  try {
-    const { phoneNumber, purpose = 'login' } = req.body;
-    
-    // Normalize phone number (remove any spaces, dashes, etc.)
-    const phone = phoneNumber.replace(/\D/g, '');
-    
-    // Additional validation for normalized phone
-    if (!/^[6-9]\d{9}$/.test(phone)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid phone number format',
-        code: 'INVALID_PHONE_FORMAT'
-      });
-    }
-
-    const metadata = {
-      ipAddress: req.ip,
-      userAgent: req.get('User-Agent'),
-      source: req.get('X-Source') || 'web'
-    };
-
-    // Check if there's a recent OTP request
-    const hasRecentOTP = await OTP.hasRecentOTP(phone, purpose);
-    if (hasRecentOTP) {
-      return res.status(429).json({
-        success: false,
-        message: 'Please wait before requesting another OTP',
-        code: 'RECENT_OTP_EXISTS',
-        retryAfter: 60 // seconds
-      });
-    }
-
-    // For registration, check if user already exists
-    if (purpose === 'registration') {
-      const existingUser = await User.findOne({ phoneNumber: phone });
-      if (existingUser) {
-        return res.status(409).json({
-          success: false,
-          message: 'User already exists with this phone number',
-          code: 'USER_EXISTS'
-        });
-      }
-    }
-
-    // For login, check if user exists
-    if (purpose === 'login') {
-      const user = await User.findOne({ phoneNumber: phone });
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'No account found with this phone number',
-          code: 'USER_NOT_FOUND'
-        });
-      }
-
-      if (!user.isActive) {
-        return res.status(403).json({
-          success: false,
-          message: 'Account is deactivated',
-          code: 'ACCOUNT_DEACTIVATED'
-        });
-      }
-    }
-
-    // Create OTP
-    const otpResult = await OTP.createOTP(phone, purpose, metadata);
-    if (!otpResult.success) {
-      console.error('OTP creation failed:', otpResult.error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to generate OTP',
-        code: 'OTP_CREATION_FAILED'
-      });
-    }
-
-    // Send SMS using normalized phone number
-    const smsResult = await sendOTP(phone, otpResult.otp);
-    
-    // Update OTP record with SMS details
-    if (otpResult.otpId) {
-      await OTP.findByIdAndUpdate(otpResult.otpId, {
-        'smsDetails.messageId': smsResult.messageId || null,
-        'smsDetails.status': smsResult.success ? 'sent' : 'failed',
-        'smsDetails.sentAt': new Date(),
-        'smsDetails.provider': smsResult.provider || 'unknown',
-        'smsDetails.errorMessage': smsResult.error || null
-      });
-    }
-
-    if (!smsResult.success) {
-      console.error('SMS sending failed:', smsResult.error);
-      return res.status(500).json({
-        success: false,
-        message: 'Failed to send OTP',
-        code: 'SMS_FAILED',
-        error: process.env.NODE_ENV === 'development' ? smsResult.error : undefined
-      });
-    }
-
-    // Log successful OTP send
-    console.log(`✅ OTP sent successfully to ${phone} for ${purpose}`);
-
-    res.status(200).json({
-      success: true,
-      message: 'OTP sent successfully',
-      data: {
-        phoneNumber: phone,
-        purpose,
-        expiresIn: 600, // 10 minutes in seconds
-        messageId: smsResult.messageId,
-        provider: smsResult.provider
-      }
-    });
-
-  } catch (error) {
-    console.error('❌ Send OTP error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to send OTP',
-      code: 'INTERNAL_SERVER_ERROR',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-});
-
 // @route   POST /api/auth/register
-// @desc    Register new user with OTP verification
+// @desc    Register new user with password
 // @access  Public
-router.post('/register', loginRateLimit, [...validateRegistration, ...validateOTP], handleValidationErrors, async (req, res) => {
+router.post('/register', registerRateLimit, validateRegistration, handleValidationErrors, async (req, res) => {
   try {
-    const { phoneNumber, otp, name, preferredLanguage, location, farmingType, email } = req.body;
+    const { phoneNumber, password, name, preferredLanguage, location, farmingType, email } = req.body;
 
-    // Verify OTP
-    const otpVerification = await OTP.verifyOTP(phoneNumber, otp, 'registration');
-    if (!otpVerification.success) {
-      return res.status(400).json({
-        success: false,
-        message: otpVerification.message,
-        code: 'OTP_VERIFICATION_FAILED',
-        attemptsLeft: otpVerification.attemptsLeft
-      });
-    }
+    // Normalize phone number
+    const phone = phoneNumber.replace(/\D/g, '');
 
     // Check if user already exists
-    const existingUser = await User.findOne({ phoneNumber });
+    const existingUser = await User.findOne({ phoneNumber: phone });
     if (existingUser) {
       return res.status(409).json({
         success: false,
@@ -231,7 +97,8 @@ router.post('/register', loginRateLimit, [...validateRegistration, ...validateOT
 
     // Create new user
     const userData = {
-      phoneNumber,
+      phoneNumber: phone,
+      password,
       name,
       email,
       preferredLanguage: preferredLanguage || 'english',
@@ -247,7 +114,7 @@ router.post('/register', loginRateLimit, [...validateRegistration, ...validateOT
     // Generate JWT token
     const token = generateToken(user._id);
 
-    // Prepare response data
+    // Prepare response data (exclude password)
     const responseUser = {
       id: user._id,
       phoneNumber: user.phoneNumber,
@@ -262,6 +129,8 @@ router.post('/register', loginRateLimit, [...validateRegistration, ...validateOT
       isVerified: user.isVerified,
       createdAt: user.createdAt
     };
+
+    console.log(`✅ New user registered: ${user.name} (${phone})`);
 
     res.status(201).json({
       success: true,
@@ -286,36 +155,29 @@ router.post('/register', loginRateLimit, [...validateRegistration, ...validateOT
     
     res.status(500).json({
       success: false,
-      message: 'Registration failed'
+      message: 'Registration failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
 
 // @route   POST /api/auth/login
-// @desc    Login user with OTP verification
+// @desc    Login user with phone number and password
 // @access  Public
-router.post('/login', loginRateLimit, [...validatePhoneNumber, ...validateOTP], handleValidationErrors, async (req, res) => {
+router.post('/login', loginRateLimit, validateLogin, handleValidationErrors, async (req, res) => {
   try {
-    const { phoneNumber, otp } = req.body;
+    const { phoneNumber, password } = req.body;
 
-    // Verify OTP
-    const otpVerification = await OTP.verifyOTP(phoneNumber, otp, 'login');
-    if (!otpVerification.success) {
-      return res.status(400).json({
-        success: false,
-        message: otpVerification.message,
-        code: 'OTP_VERIFICATION_FAILED',
-        attemptsLeft: otpVerification.attemptsLeft
-      });
-    }
+    // Normalize phone number
+    const phone = phoneNumber.replace(/\D/g, '');
 
     // Find user
-    const user = await User.findOne({ phoneNumber });
+    const user = await User.findOne({ phoneNumber: phone });
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'No account found with this phone number',
-        code: 'USER_NOT_FOUND'
+        message: 'Invalid phone number or password',
+        code: 'INVALID_CREDENTIALS'
       });
     }
 
@@ -324,6 +186,16 @@ router.post('/login', loginRateLimit, [...validatePhoneNumber, ...validateOTP], 
         success: false,
         message: 'Account is deactivated',
         code: 'ACCOUNT_DEACTIVATED'
+      });
+    }
+
+    // Verify password
+    const isPasswordValid = await user.comparePassword(password);
+    if (!isPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number or password',
+        code: 'INVALID_CREDENTIALS'
       });
     }
 
@@ -337,7 +209,7 @@ router.post('/login', loginRateLimit, [...validatePhoneNumber, ...validateOTP], 
     // Generate JWT token
     const token = generateToken(user._id);
 
-    // Prepare response data
+    // Prepare response data (exclude password)
     const responseUser = {
       id: user._id,
       phoneNumber: user.phoneNumber,
@@ -355,6 +227,8 @@ router.post('/login', loginRateLimit, [...validatePhoneNumber, ...validateOTP], 
       preferences: user.preferences
     };
 
+    console.log(`✅ User logged in: ${user.name} (${phone})`);
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -370,43 +244,8 @@ router.post('/login', loginRateLimit, [...validatePhoneNumber, ...validateOTP], 
     console.error('Login error:', error);
     res.status(500).json({
       success: false,
-      message: 'Login failed'
-    });
-  }
-});
-
-// @route   POST /api/auth/verify-phone
-// @desc    Verify phone number with OTP
-// @access  Public
-router.post('/verify-phone', [...validatePhoneNumber, ...validateOTP], handleValidationErrors, async (req, res) => {
-  try {
-    const { phoneNumber, otp } = req.body;
-
-    // Verify OTP
-    const otpVerification = await OTP.verifyOTP(phoneNumber, otp, 'phone_verification');
-    if (!otpVerification.success) {
-      return res.status(400).json({
-        success: false,
-        message: otpVerification.message,
-        code: 'OTP_VERIFICATION_FAILED',
-        attemptsLeft: otpVerification.attemptsLeft
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Phone number verified successfully',
-      data: {
-        phoneNumber,
-        verified: true
-      }
-    });
-
-  } catch (error) {
-    console.error('Phone verification error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Phone verification failed'
+      message: 'Login failed',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
@@ -444,6 +283,49 @@ router.get('/check-phone/:phoneNumber', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to check phone number'
+    });
+  }
+});
+
+// @route   GET /api/auth/profile
+// @desc    Get current user profile
+// @access  Private
+router.get('/profile', require('../middleware/auth').authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    
+    // Prepare response data (exclude password)
+    const responseUser = {
+      id: user._id,
+      phoneNumber: user.phoneNumber,
+      name: user.name,
+      email: user.email,
+      preferredLanguage: user.preferredLanguage,
+      location: user.location,
+      farmingType: user.farmingType,
+      subscription: user.subscription,
+      usage: user.usage,
+      role: user.role,
+      isVerified: user.isVerified,
+      lastLogin: user.lastLogin,
+      profile: user.profile,
+      preferences: user.preferences,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        user: responseUser
+      }
+    });
+
+  } catch (error) {
+    console.error('Profile fetch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch profile'
     });
   }
 });

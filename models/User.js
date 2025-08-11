@@ -8,6 +8,11 @@ const userSchema = new mongoose.Schema({
     unique: true,
     match: [/^[6-9]\d{9}$/, 'Please enter a valid Indian mobile number']
   },
+  password: {
+    type: String,
+    required: true,
+    minlength: 6
+  },
   name: {
     type: String,
     required: true,
@@ -171,9 +176,29 @@ userSchema.methods.resetMonthlyUsage = function() {
   return false;
 };
 
+// Method to compare password
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  try {
+    return await bcrypt.compare(candidatePassword, this.password);
+  } catch (error) {
+    throw error;
+  }
+};
+
 // Pre-save middleware
-userSchema.pre('save', function(next) {
+userSchema.pre('save', async function(next) {
   this.updatedAt = new Date();
+  
+  // Hash password if it's modified
+  if (this.isModified('password')) {
+    try {
+      const salt = await bcrypt.genSalt(10);
+      this.password = await bcrypt.hash(this.password, salt);
+    } catch (error) {
+      return next(error);
+    }
+  }
+  
   next();
 });
 
