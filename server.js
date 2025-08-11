@@ -18,10 +18,17 @@ app.use(cors({
     'http://localhost:3001',           // alternative development port
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
-    process.env.FRONTEND_URL           // production frontend
+    'https://prani-mitra1.vercel.app', // production frontend (Vercel)
+    process.env.FRONTEND_URL           // additional production frontend from env
   ].filter(Boolean), // Remove any undefined values
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: [
+    'Content-Type', 
+    'Authorization', 
+    'X-Requested-With',
+    'Accept',
+    'Origin'
+  ],
   credentials: true
 }));
 
