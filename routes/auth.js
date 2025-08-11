@@ -18,54 +18,123 @@ const validatePassword = [
 ];
 
 const validateRegistration = [
+  // Phone number validation
   ...validatePhoneNumber,
-  ...validatePassword,
+  
+  // Password validation with strength requirements
+  body('password')
+    .isLength({ min: 6, max: 128 })
+    .withMessage('Password must be between 6 and 128 characters')
+    .matches(/^(?=.*[a-zA-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one letter and one number'),
+  
+  // Confirm password validation
   body('confirmPassword')
+    .notEmpty()
+    .withMessage('Please confirm your password')
     .custom((value, { req }) => {
       if (value !== req.body.password) {
         throw new Error('Passwords do not match');
       }
       return true;
     }),
+  
+  // Name validation
   body('name')
     .trim()
+    .notEmpty()
+    .withMessage('Name is required')
     .isLength({ min: 2, max: 100 })
-    .withMessage('Name must be between 2 and 100 characters'),
+    .withMessage('Name must be between 2 and 100 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Name can only contain letters and spaces'),
+  
+  // Email validation (optional but must be valid if provided)
   body('email')
-    .optional()
+    .optional({ checkFalsy: true })
     .isEmail()
-    .withMessage('Please enter a valid email address'),
+    .withMessage('Please enter a valid email address')
+    .normalizeEmail(),
+  
+  // Language validation
   body('preferredLanguage')
     .optional()
     .isIn(['english', 'hindi', 'telugu'])
     .withMessage('Language must be english, hindi, or telugu'),
+  
+  // Location validation
+  body('location')
+    .optional()
+    .isObject()
+    .withMessage('Location must be an object'),
+  
   body('location.state')
-    .optional()
+    .optional({ checkFalsy: true })
     .trim()
-    .isLength({ max: 50 })
-    .withMessage('State name too long'),
+    .isLength({ min: 2, max: 50 })
+    .withMessage('State name must be between 2 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('State name can only contain letters and spaces'),
+  
   body('location.district')
-    .optional()
+    .optional({ checkFalsy: true })
     .trim()
-    .isLength({ max: 50 })
-    .withMessage('District name too long'),
+    .isLength({ min: 2, max: 50 })
+    .withMessage('District name must be between 2 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('District name can only contain letters and spaces'),
+  
   body('location.village')
-    .optional()
+    .optional({ checkFalsy: true })
     .trim()
-    .isLength({ max: 50 })
-    .withMessage('Village name too long'),
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Village name must be between 2 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/)
+    .withMessage('Village name can only contain letters and spaces'),
+  
   body('location.pincode')
-    .optional()
-    .matches(/^\d{6}$/)
-    .withMessage('Pincode must be 6 digits'),
+    .optional({ checkFalsy: true })
+    .matches(/^[1-9][0-9]{5}$/)
+    .withMessage('Pincode must be 6 digits and cannot start with 0'),
+  
+  // Farming types validation
   body('farmingTypes')
     .optional()
     .isArray()
-    .withMessage('Farming types must be an array'),
+    .withMessage('Farming types must be an array')
+    .custom((value) => {
+      if (Array.isArray(value) && value.length > 5) {
+        throw new Error('Cannot select more than 5 farming types');
+      }
+      return true;
+    }),
+  
   body('farmingTypes.*')
     .optional()
     .isIn(['crops', 'dairy', 'poultry', 'goats', 'sheep', 'fishery', 'mixed'])
-    .withMessage('Invalid farming type')
+    .withMessage('Invalid farming type. Must be one of: crops, dairy, poultry, goats, sheep, fishery, mixed'),
+  
+  // Custom validation for required fields
+  body()
+    .custom((value, { req }) => {
+      const { phoneNumber, password, confirmPassword, name } = req.body;
+      
+      // Check for required fields
+      if (!phoneNumber) {
+        throw new Error('Phone number is required');
+      }
+      if (!password) {
+        throw new Error('Password is required');
+      }
+      if (!confirmPassword) {
+        throw new Error('Password confirmation is required');
+      }
+      if (!name || name.trim() === '') {
+        throw new Error('Name is required');
+      }
+      
+      return true;
+    })
 ];
 
 const validateLogin = [
@@ -89,12 +158,91 @@ const handleValidationErrors = (req, res, next) => {
 // @route   POST /api/auth/register
 // @desc    Register new user with password
 // @access  Public
+// @validation Comprehensive validation including:
+//           - Phone: Indian mobile format (10 digits, starts with 6-9)
+//           - Password: Min 6 chars, contains letter & number
+//           - Name: 2-100 chars, letters and spaces only
+//           - Email: Valid format (optional)
+//           - Location: Valid Indian pincode format (optional)
+//           - FarmingTypes: Max 5 types from predefined list (optional)
 router.post('/register', registerRateLimit, validateRegistration, handleValidationErrors, async (req, res) => {
   try {
     const { phoneNumber, password, name, preferredLanguage, location, farmingTypes, email } = req.body;
 
-    // Normalize phone number
+    // Normalize and validate phone number
     const phone = phoneNumber.replace(/\D/g, '');
+    
+    // Additional server-side validation
+    if (!/^[6-9]\d{9}$/.test(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Indian mobile number format',
+        code: 'INVALID_PHONE_FORMAT'
+      });
+    }
+
+    // Validate password strength
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password must be at least 6 characters long',
+        code: 'WEAK_PASSWORD'
+      });
+    }
+
+    // Validate name
+    const trimmedName = name.trim();
+    if (!trimmedName || trimmedName.length < 2) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name must be at least 2 characters long',
+        code: 'INVALID_NAME'
+      });
+    }
+
+    // Validate email if provided
+    if (email && email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a valid email address',
+        code: 'INVALID_EMAIL'
+      });
+    }
+
+    // Validate farming types if provided
+    if (farmingTypes && Array.isArray(farmingTypes)) {
+      const validTypes = ['crops', 'dairy', 'poultry', 'goats', 'sheep', 'fishery', 'mixed'];
+      const invalidTypes = farmingTypes.filter(type => !validTypes.includes(type));
+      
+      if (invalidTypes.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid farming types: ${invalidTypes.join(', ')}`,
+          code: 'INVALID_FARMING_TYPES'
+        });
+      }
+
+      if (farmingTypes.length > 5) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot select more than 5 farming types',
+          code: 'TOO_MANY_FARMING_TYPES'
+        });
+      }
+    }
+
+    // Validate location if provided
+    if (location && typeof location === 'object') {
+      const { state, district, village, pincode } = location;
+      
+      if (pincode && !/^[1-9][0-9]{5}$/.test(pincode)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid pincode format',
+          code: 'INVALID_PINCODE'
+        });
+      }
+    }
 
     // Check if user already exists
     const existingUser = await User.findOne({ phoneNumber: phone });
@@ -106,12 +254,24 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
       });
     }
 
-    // Create new user
+    // Check if email is already registered (if provided)
+    if (email && email.trim()) {
+      const existingEmailUser = await User.findOne({ email: email.trim().toLowerCase() });
+      if (existingEmailUser) {
+        return res.status(409).json({
+          success: false,
+          message: 'Email address is already registered',
+          code: 'EMAIL_EXISTS'
+        });
+      }
+    }
+
+    // Create new user with sanitized data
     const userData = {
       phoneNumber: phone,
       password,
-      name,
-      email,
+      name: trimmedName,
+      email: email ? email.trim().toLowerCase() : undefined,
       preferredLanguage: preferredLanguage || 'english',
       location: location || {},
       farmingType: farmingTypes || [], // Map farmingTypes to farmingType for database
