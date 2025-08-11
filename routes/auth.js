@@ -138,7 +138,19 @@ const validateRegistration = [
 ];
 
 const validateLogin = [
-  ...validatePhoneNumber,
+  body('identifier')
+    .notEmpty()
+    .withMessage('Email or phone number is required')
+    .custom((value) => {
+      // Check if it's a valid email or phone number
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+      const isPhone = /^[6-9]\d{9}$/.test(value.replace(/\D/g, ''));
+      
+      if (!isEmail && !isPhone) {
+        throw new Error('Please enter a valid email address or Indian mobile number (10 digits starting with 6-9)');
+      }
+      return true;
+    }),
   ...validatePassword
 ];
 
@@ -333,21 +345,43 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
 });
 
 // @route   POST /api/auth/login
-// @desc    Login user with phone number and password
+// @desc    Login user with email or phone number and password
 // @access  Public
+// @validation Accepts either email or phone number as identifier
 router.post('/login', loginRateLimit, validateLogin, handleValidationErrors, async (req, res) => {
   try {
-    const { phoneNumber, password } = req.body;
+    const { identifier, password } = req.body;
 
-    // Normalize phone number
-    const phone = phoneNumber.replace(/\D/g, '');
+    // Determine if identifier is email or phone number
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+    const isPhone = /^[6-9]\d{9}$/.test(identifier.replace(/\D/g, ''));
 
-    // Find user
-    const user = await User.findOne({ phoneNumber: phone });
+    let user;
+    let searchField;
+    let searchValue;
+
+    if (isEmail) {
+      // Search by email
+      searchField = 'email';
+      searchValue = identifier.toLowerCase().trim();
+      user = await User.findOne({ email: searchValue });
+    } else if (isPhone) {
+      // Search by phone number
+      searchField = 'phoneNumber';
+      searchValue = identifier.replace(/\D/g, '');
+      user = await User.findOne({ phoneNumber: searchValue });
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Please enter a valid email address or phone number',
+        code: 'INVALID_IDENTIFIER_FORMAT'
+      });
+    }
+
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'Invalid phone number or password',
+        message: 'Invalid credentials',
         code: 'INVALID_CREDENTIALS'
       });
     }
@@ -398,7 +432,7 @@ router.post('/login', loginRateLimit, validateLogin, handleValidationErrors, asy
       preferences: user.preferences
     };
 
-    console.log(`✅ User logged in: ${user.name} (${phone})`);
+    console.log(`✅ User logged in: ${user.name} (${searchField}: ${searchValue})`);
 
     res.status(200).json({
       success: true,
