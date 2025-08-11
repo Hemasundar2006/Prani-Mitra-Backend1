@@ -20,10 +20,21 @@ const validatePassword = [
 const validateRegistration = [
   ...validatePhoneNumber,
   ...validatePassword,
+  body('confirmPassword')
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error('Passwords do not match');
+      }
+      return true;
+    }),
   body('name')
     .trim()
     .isLength({ min: 2, max: 100 })
     .withMessage('Name must be between 2 and 100 characters'),
+  body('email')
+    .optional()
+    .isEmail()
+    .withMessage('Please enter a valid email address'),
   body('preferredLanguage')
     .optional()
     .isIn(['english', 'hindi', 'telugu'])
@@ -47,11 +58,11 @@ const validateRegistration = [
     .optional()
     .matches(/^\d{6}$/)
     .withMessage('Pincode must be 6 digits'),
-  body('farmingType')
+  body('farmingTypes')
     .optional()
     .isArray()
-    .withMessage('Farming type must be an array'),
-  body('farmingType.*')
+    .withMessage('Farming types must be an array'),
+  body('farmingTypes.*')
     .optional()
     .isIn(['crops', 'dairy', 'poultry', 'goats', 'sheep', 'fishery', 'mixed'])
     .withMessage('Invalid farming type')
@@ -80,7 +91,7 @@ const handleValidationErrors = (req, res, next) => {
 // @access  Public
 router.post('/register', registerRateLimit, validateRegistration, handleValidationErrors, async (req, res) => {
   try {
-    const { phoneNumber, password, name, preferredLanguage, location, farmingType, email } = req.body;
+    const { phoneNumber, password, name, preferredLanguage, location, farmingTypes, email } = req.body;
 
     // Normalize phone number
     const phone = phoneNumber.replace(/\D/g, '');
@@ -103,7 +114,7 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
       email,
       preferredLanguage: preferredLanguage || 'english',
       location: location || {},
-      farmingType: farmingType || [],
+      farmingType: farmingTypes || [], // Map farmingTypes to farmingType for database
       isVerified: true,
       lastLogin: new Date()
     };
