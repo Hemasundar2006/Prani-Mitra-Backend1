@@ -11,9 +11,9 @@ const Voucher = require('../models/Voucher');
 // Sample data
 const samplePlans = [
   {
-    name: 'free',
+    name: 'freetrial',
     displayName: {
-      en: 'Free Plan',
+      en: 'Free Trial',
       hi: 'मुफ्त योजना',
       te: 'ఉచిత ప్లాన్'
     },

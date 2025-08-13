@@ -1,8 +1,9 @@
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
-const { generateToken, loginRateLimit, registerRateLimit } = require('../middleware/auth');
+const { generateToken, loginRateLimit, registerRateLimit, authenticateToken, requireAdmin } = require('../middleware/auth');
 const router = express.Router();
+const emailService = require('../services/emailService');
 
 // Validation middleware
 const validatePhoneNumber = [
@@ -297,6 +298,20 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
     // Generate JWT token
     const token = generateToken(user._id);
 
+    // Send welcome email (non-blocking)
+    if (user.email) {
+      emailService.sendWelcomeEmail({
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        preferredLanguage: user.preferredLanguage  // This will be 'telugu'
+      }).then(result => {
+        // Email sent in Telugu
+      }).catch(error => {
+        console.error(`❌ Welcome email error for ${user.email}:`, error);
+      });
+    }
+
     // Prepare response data (exclude password)
     const responseUser = {
       id: user._id,
@@ -531,6 +546,45 @@ router.get('/profile', require('../middleware/auth').authenticateToken, async (r
     res.status(500).json({
       success: false,
       message: 'Failed to fetch profile'
+    });
+  }
+});
+
+// @route   POST /api/auth/test-email
+// @desc    Test email functionality (Admin only)
+// @access  Private/Admin
+router.post('/test-email', authenticateToken, requireAdmin, [
+  body('email')
+    .isEmail()
+    .withMessage('Valid email address is required')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    const result = await emailService.testEmail(email);
+    
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: 'Test email sent successfully',
+        data: {
+          messageId: result.messageId,
+          email: result.email
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: 'Failed to send test email',
+        error: result.error
+      });
+    }
+
+  } catch (error) {
+    console.error('Test email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Email test failed'
     });
   }
 });
