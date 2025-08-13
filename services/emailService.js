@@ -122,6 +122,16 @@ class EmailService {
 
       const emailContent = this.generateWelcomeEmailContent(name, preferredLanguage);
 
+      // Optional inline banner image (CID) if a local path is provided
+      const attachments = [];
+      if (process.env.WELCOME_BANNER_PATH) {
+        attachments.push({
+          filename: 'welcome-banner',
+          path: process.env.WELCOME_BANNER_PATH,
+          cid: 'welcomeBanner'
+        });
+      }
+
       const mailOptions = {
         from: process.env.EMAIL_FROM || process.env.EMAIL_USER || 'noreply@pranimitra.com',
         to: email,
@@ -129,6 +139,10 @@ class EmailService {
         html: emailContent.html,
         text: emailContent.text
       };
+
+      if (attachments.length > 0) {
+        mailOptions.attachments = attachments;
+      }
 
       const result = await this.transporter.sendMail(mailOptions);
       
@@ -154,12 +168,16 @@ class EmailService {
     const startupName = process.env.STARTUP_NAME || 'Prani Mitra';
     const tollFree = process.env.TOLL_FREE_NUMBER || '04041893203';
     const website = process.env.WEBSITE_URL || process.env.FRONTEND_URL || 'https://prani-mitra1.vercel.app';
+    const bannerHTML = process.env.WELCOME_BANNER_PATH
+      ? '<img src="cid:welcomeBanner" alt="Welcome banner" style="width:100%;max-width:100%;display:block;border-radius:8px;margin-bottom:16px;" />'
+      : '';
 
     const templates = {
       english: {
         subject: `🌾 Welcome to ${startupName} – Your Farming Assistant in Your Language!`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #ffffff;">
+            ${bannerHTML}
             <h2 style="margin: 0 0 16px; color: #2e7d32;">Namaskaram ${name},</h2>
             <p style="color: #444; line-height: 1.7; margin: 0 0 16px;">
               Welcome to <strong>${startupName}</strong> – your trusted voice-based farming helpdesk! We’re here to answer your farming questions, give you updates, and connect you to important schemes in your own language.
@@ -220,6 +238,7 @@ Team ${startupName}
         subject: `🌾 ${startupName} में आपका स्वागत है – आपकी भाषा में कृषि सहायक!`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #ffffff;">
+            ${bannerHTML}
             <h2 style="margin: 0 0 16px; color: #2e7d32;">नमस्ते ${name},</h2>
             <p style="color: #444; line-height: 1.7; margin: 0 0 16px;">
               <strong>${startupName}</strong> में आपका स्वागत है – आपका भरोसेमंद वॉइस-बेस्ड कृषि हेल्पडेस्क! हम आपकी खेती से जुड़ी समस्याओं के जवाब, अपडेट, और सरकारी योजनाओं की जानकारी आपकी अपनी भाषा में देते हैं।
@@ -280,6 +299,7 @@ ${startupName} में आपका स्वागत है – आपका
         subject: `🌾 ${startupName} కు స్వాగతం – మీ భాషలో వ్యవసాయ సహాయకుడు!`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #ffffff;">
+            ${bannerHTML}
             <h2 style="margin: 0 0 16px; color: #2e7d32;">నమస్కారం ${name},</h2>
             <p style="color: #444; line-height: 1.7; margin: 0 0 16px;">
               <strong>${startupName}</strong> కు స్వాగతం – మీ నమ్మకమైన వాయిస్-ఆధారిత వ్యవసాయ హెల్ప్‌డెస్క్! మీ ప్రశ్నలకు సమాధానాలు, తాజా సమాచారం, మరియు ప్రభుత్వ పథకాల గురించి మీ భాషలోనే అందిస్తాము.
