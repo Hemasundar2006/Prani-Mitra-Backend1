@@ -550,41 +550,115 @@ router.get('/profile', require('../middleware/auth').authenticateToken, async (r
   }
 });
 
-// @route   POST /api/auth/test-email
-// @desc    Test email functionality (Admin only)
-// @access  Private/Admin
-router.post('/test-email', authenticateToken, requireAdmin, [
+// @route   POST /api/auth/create-admin
+// @desc    Create admin user (Development only)
+// @access  Public (Development only)
+router.post('/create-admin', [
   body('email')
     .isEmail()
-    .withMessage('Valid email address is required')
+    .withMessage('Valid email address is required'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long'),
+  body('name')
+    .trim()
+    .notEmpty()
+    .withMessage('Name is required')
 ], handleValidationErrors, async (req, res) => {
   try {
-    const { email } = req.body;
-    
-    const result = await emailService.testEmail(email);
-    
-    if (result.success) {
-      res.status(200).json({
-        success: true,
-        message: 'Test email sent successfully',
-        data: {
-          messageId: result.messageId,
-          email: result.email
-        }
-      });
-    } else {
-      res.status(500).json({
+    // Only allow in development
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({
         success: false,
-        message: 'Failed to send test email',
-        error: result.error
+        message: 'Admin creation not allowed in production'
       });
     }
 
+    const { email, password, name } = req.body;
+
+    // Check if admin already exists
+    const existingAdmin = await User.findOne({ 
+      $or: [
+        { email: email.toLowerCase() },
+        { phoneNumber: '9666180813' }
+      ]
+    });
+
+    if (existingAdmin) {
+      return res.status(409).json({
+        success: false,
+        message: 'Admin user already exists',
+        data: {
+          email: existingAdmin.email,
+          role: existingAdmin.role
+        }
+      });
+    }
+
+    // Create admin user
+    const adminUser = new User({
+      phoneNumber: '9999999999', // Dummy phone number for admin
+      password: password,
+      name: name,
+      email: email.toLowerCase(),
+      preferredLanguage: 'english',
+      role: 'admin',
+      isVerified: true,
+      isActive: true,
+      subscription: {
+        status: 'active',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
+        autoRenewal: true
+      },
+      usage: {
+        totalCalls: 0,
+        monthlyCallsUsed: 0,
+        lastResetDate: new Date()
+      },
+      profile: {
+        experience: '10+years'
+      },
+      preferences: {
+        notifications: {
+          sms: true,
+          email: true,
+          whatsapp: true
+        },
+        timezone: 'Asia/Kolkata'
+      }
+    });
+
+    await adminUser.save();
+
+    // Generate JWT token
+    const token = generateToken(adminUser._id);
+
+    console.log(`✅ Admin user created: ${name} (${email})`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Admin user created successfully',
+      data: {
+        user: {
+          id: adminUser._id,
+          name: adminUser.name,
+          email: adminUser.email,
+          role: adminUser.role,
+          isVerified: adminUser.isVerified,
+          isActive: adminUser.isActive
+        },
+        token,
+        tokenType: 'Bearer'
+      }
+    });
+
   } catch (error) {
-    console.error('Test email error:', error);
+    console.error('Create admin error:', error);
     res.status(500).json({
       success: false,
-      message: 'Email test failed'
+      message: 'Failed to create admin user',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
