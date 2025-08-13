@@ -40,13 +40,20 @@ const voucherSchema = new mongoose.Schema({
     min: 0
   },
   applicablePlans: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Plan'
+    type: String,
+    enum: ['all', 'basic', 'premium', 'enterprise'],
+    default: ['all']
   }],
   billingCycles: [{
     type: String,
     enum: ['monthly', 'yearly']
   }],
+  usageLimit: {
+    type: Number,
+    required: true,
+    min: 1,
+    default: 100
+  },
   usage: {
     totalLimit: {
       type: Number,
@@ -74,18 +81,11 @@ const voucherSchema = new mongoose.Schema({
     }]
   },
   validity: {
-    startDate: {
-      type: Date,
-      required: true
-    },
-    endDate: {
-      type: Date,
-      required: true
-    },
-    timezone: {
-      type: String,
-      default: 'Asia/Kolkata'
-    }
+    type: Number,
+    required: true,
+    min: 1,
+    max: 365,
+    default: 30
   },
   conditions: {
     firstTimeUser: {
@@ -144,22 +144,18 @@ const voucherSchema = new mongoose.Schema({
 
 // Indexes for efficient queries
 voucherSchema.index({ code: 1 });
-voucherSchema.index({ isActive: 1, 'validity.startDate': 1, 'validity.endDate': 1 });
+voucherSchema.index({ isActive: 1, usageLimit: 1 });
 voucherSchema.index({ 'usage.totalUsed': 1, 'usage.totalLimit': 1 });
 voucherSchema.index({ createdAt: -1 });
 
 // Virtual for checking if voucher is currently valid
 voucherSchema.virtual('isCurrentlyValid').get(function() {
-  const now = new Date();
-  return this.isActive && 
-         this.validity.startDate <= now && 
-         this.validity.endDate >= now;
+  return this.isActive && this.usage.totalUsed < this.usageLimit;
 });
 
 // Virtual for remaining usage
 voucherSchema.virtual('remainingUsage').get(function() {
-  if (!this.usage.totalLimit) return Infinity;
-  return Math.max(0, this.usage.totalLimit - this.usage.totalUsed);
+  return Math.max(0, this.usageLimit - this.usage.totalUsed);
 });
 
 // Method to check if user can use this voucher
@@ -170,7 +166,7 @@ voucherSchema.methods.canUserUse = function(userId, user) {
   }
   
   // Check total usage limit
-  if (this.usage.totalLimit && this.usage.totalUsed >= this.usage.totalLimit) {
+  if (this.usage.totalUsed >= this.usageLimit) {
     return { canUse: false, reason: 'Voucher usage limit exceeded' };
   }
   
@@ -272,16 +268,12 @@ voucherSchema.methods.applyUsage = function(userId) {
 };
 
 // Static method to find applicable vouchers for user
-voucherSchema.statics.findApplicableVouchers = function(userId, user, planId, billingCycle) {
-  const now = new Date();
-  
+voucherSchema.statics.findApplicableVouchers = function(userId, user, planType, billingCycle) {
   return this.find({
     isActive: true,
-    'validity.startDate': { $lte: now },
-    'validity.endDate': { $gte: now },
     $or: [
-      { 'applicablePlans': { $size: 0 } },
-      { 'applicablePlans': planId }
+      { 'applicablePlans': 'all' },
+      { 'applicablePlans': planType }
     ]
   }).then(vouchers => {
     return vouchers.filter(voucher => {

@@ -330,6 +330,11 @@ router.get('/analytics/users', authenticateToken, requireAdminOrSupport, async (
 // @desc    Create new voucher
 // @access  Private/Admin
 router.post('/vouchers', authenticateToken, requireAdmin, [
+
+// @route   POST /api/admin/vouchers/dev
+// @desc    Create new voucher (Development only - no auth required)
+// @access  Public (Development only)
+router.post('/vouchers/dev', [
   body('code')
     .trim()
     .isLength({ min: 4, max: 20 })
@@ -390,6 +395,90 @@ router.post('/vouchers', authenticateToken, requireAdmin, [
     res.status(500).json({
       success: false,
       message: 'Failed to create voucher'
+    });
+  }
+});
+
+// Development endpoint for voucher creation (no auth required)
+router.post('/vouchers/dev', [
+  body('code')
+    .trim()
+    .isLength({ min: 4, max: 20 })
+    .isAlphanumeric()
+    .withMessage('Voucher code must be 4-20 alphanumeric characters'),
+  body('name')
+    .trim()
+    .notEmpty()
+    .withMessage('Voucher name is required'),
+  body('type')
+    .isIn(['percentage', 'fixed', 'free_trial'])
+    .withMessage('Invalid voucher type'),
+  body('value')
+    .isFloat({ min: 0 })
+    .withMessage('Value must be a positive number'),
+  body('validity')
+    .isInt({ min: 1, max: 365 })
+    .withMessage('Validity must be between 1 and 365 days'),
+  body('usageLimit')
+    .isInt({ min: 1 })
+    .withMessage('Usage limit must be a positive integer'),
+  body('applicablePlans')
+    .optional()
+    .isArray()
+    .withMessage('Applicable plans must be an array'),
+  body('isActive')
+    .optional()
+    .isBoolean()
+    .withMessage('isActive must be a boolean'),
+  body('isPublic')
+    .optional()
+    .isBoolean()
+    .withMessage('isPublic must be a boolean')
+], handleValidationErrors, async (req, res) => {
+  try {
+    // Only allow in development
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({
+        success: false,
+        message: 'Development endpoint not available in production'
+      });
+    }
+
+    const voucherData = {
+      ...req.body,
+      code: req.body.code.toUpperCase(),
+      createdBy: '507f1f77bcf86cd799439011' // Dummy admin user ID for development
+    };
+
+    // Check if voucher code already exists
+    const existingVoucher = await Voucher.findOne({ code: voucherData.code });
+    if (existingVoucher) {
+      return res.status(409).json({
+        success: false,
+        message: 'Voucher code already exists'
+      });
+    }
+
+    const voucher = new Voucher(voucherData);
+    await voucher.save();
+
+    console.log(`✅ Development voucher created: ${voucher.code} (${voucher.name})`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Voucher created successfully (Development mode)',
+      data: { 
+        voucher,
+        note: 'This endpoint is for development only'
+      }
+    });
+
+  } catch (error) {
+    console.error('Create voucher error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create voucher',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
