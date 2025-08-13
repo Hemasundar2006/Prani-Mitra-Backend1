@@ -183,7 +183,7 @@ const loginRateLimit = createRateLimit(
 
 const registerRateLimit = createRateLimit(
   60 * 60 * 1000, // 1 hour
-  5, // 5 registration attempts per hour
+  50, // 50 registration attempts per hour (increased from 5)
   'Too many registration attempts. Please try again later.'
 );
 
