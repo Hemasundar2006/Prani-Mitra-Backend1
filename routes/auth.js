@@ -568,6 +568,69 @@ router.get('/profile', require('../middleware/auth').authenticateToken, async (r
   }
 });
 
+// @route   POST /api/auth/test-email
+// @desc    Test email functionality (Development only)
+// @access  Public (Development only)
+router.post('/test-email', [
+  body('email')
+    .isEmail()
+    .withMessage('Valid email address is required'),
+  body('name')
+    .trim()
+    .notEmpty()
+    .withMessage('Name is required'),
+  body('type')
+    .isIn(['welcome', 'login'])
+    .withMessage('Type must be welcome or login')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const { email, name, type } = req.body;
+    
+    let result;
+    if (type === 'welcome') {
+      result = await emailService.sendWelcomeEmail({
+        to: email,
+        name: name,
+        language: 'english'
+      });
+    } else if (type === 'login') {
+      result = await emailService.sendLoginSuccessEmail({
+        to: email,
+        name: name,
+        language: 'english',
+        loginTime: new Date(),
+        deviceInfo: 'Test Device',
+        ipAddress: '127.0.0.1'
+      });
+    }
+    
+    if (result.success) {
+      res.status(200).json({
+        success: true,
+        message: `${type} email sent successfully`,
+        data: {
+          messageId: result.messageId,
+          email: result.email
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: `Failed to send ${type} email`,
+        error: result.error
+      });
+    }
+
+  } catch (error) {
+    console.error('Test email error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Test email failed',
+      error: error.message
+    });
+  }
+});
+
 // @route   POST /api/auth/create-admin
 // @desc    Create admin user (Development only)
 // @access  Public (Development only)

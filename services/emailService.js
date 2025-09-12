@@ -9,7 +9,7 @@ class EmailService {
   initializeTransporter() {
     try {
       // Prefer configured SMTP (e.g., Gmail) whenever credentials are present
-      if (process.env.EMAIL_USER && process.env.EMAIL_PASSWORD) {
+      if (process.env.EMAIL_USER && (process.env.EMAIL_PASSWORD || process.env.EMAIL_PASS)) {
         const useGmail = (process.env.EMAIL_SERVICE || 'gmail').toLowerCase() === 'gmail';
         this.transporter = nodemailer.createTransport(
           useGmail
@@ -19,14 +19,14 @@ class EmailService {
                 secure: true,
                 auth: {
                   user: process.env.EMAIL_USER,
-                  pass: process.env.EMAIL_PASSWORD
+                  pass: process.env.EMAIL_PASSWORD || process.env.EMAIL_PASS
                 }
               }
             : {
                 service: process.env.EMAIL_SERVICE,
                 auth: {
                   user: process.env.EMAIL_USER,
-                  pass: process.env.EMAIL_PASSWORD
+                  pass: process.env.EMAIL_PASSWORD || process.env.EMAIL_PASS
                 }
               }
         );
