@@ -330,40 +330,15 @@ router.get('/analytics/users', authenticateToken, requireAdminOrSupport, async (
 // @desc    Create new voucher
 // @access  Private/Admin
 router.post('/vouchers', authenticateToken, requireAdmin, [
-
-// @route   POST /api/admin/vouchers/dev
-// @desc    Create new voucher (Development only - no auth required)
-// @access  Public (Development only)
-router.post('/vouchers/dev', [
-  body('code')
-    .trim()
-    .isLength({ min: 4, max: 20 })
-    .isAlphanumeric()
-    .withMessage('Voucher code must be 4-20 alphanumeric characters'),
-  body('name')
-    .trim()
-    .notEmpty()
-    .withMessage('Voucher name is required'),
-  body('type')
-    .isIn(['percentage', 'fixed', 'free_trial'])
-    .withMessage('Invalid voucher type'),
-  body('value')
-    .isFloat({ min: 0 })
-    .withMessage('Value must be a positive number'),
-  body('validity.startDate')
-    .isISO8601()
-    .withMessage('Invalid start date format'),
-  body('validity.endDate')
-    .isISO8601()
-    .withMessage('Invalid end date format'),
-  body('usage.totalLimit')
-    .optional()
-    .isInt({ min: 1 })
-    .withMessage('Total limit must be a positive integer'),
-  body('usage.perUserLimit')
-    .optional()
-    .isInt({ min: 1 })
-    .withMessage('Per user limit must be a positive integer')
+  body('code').trim().isLength({ min: 4, max: 20 }).isAlphanumeric(),
+  body('name').trim().notEmpty(),
+  body('type').isIn(['percentage', 'fixed', 'free_trial']),
+  body('value').isFloat({ min: 0 }),
+  body('validity').isInt({ min: 1, max: 365 }),
+  body('usageLimit').isInt({ min: 1 }),
+  body('applicablePlans').optional().isArray(),
+  body('isActive').optional().isBoolean(),
+  body('isPublic').optional().isBoolean()
 ], handleValidationErrors, async (req, res) => {
   try {
     const voucherData = {
@@ -372,30 +347,18 @@ router.post('/vouchers/dev', [
       createdBy: req.userId
     };
 
-    // Check if voucher code already exists
     const existingVoucher = await Voucher.findOne({ code: voucherData.code });
     if (existingVoucher) {
-      return res.status(409).json({
-        success: false,
-        message: 'Voucher code already exists'
-      });
+      return res.status(409).json({ success: false, message: 'Voucher code already exists' });
     }
 
     const voucher = new Voucher(voucherData);
     await voucher.save();
 
-    res.status(201).json({
-      success: true,
-      message: 'Voucher created successfully',
-      data: { voucher }
-    });
-
+    res.status(201).json({ success: true, message: 'Voucher created successfully', data: { voucher } });
   } catch (error) {
     console.error('Create voucher error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to create voucher'
-    });
+    res.status(500).json({ success: false, message: 'Failed to create voucher' });
   }
 });
 
