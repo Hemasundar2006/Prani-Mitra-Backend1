@@ -449,6 +449,24 @@ router.post('/login', loginRateLimit, validateLogin, handleValidationErrors, asy
 
     console.log(`✅ User logged in: ${user.name} (${searchField}: ${searchValue})`);
 
+    // Send login success email (if user has email)
+    if (user.email) {
+      try {
+        await emailService.sendLoginSuccessEmail({
+          to: user.email,
+          name: user.name,
+          language: user.preferredLanguage || 'english',
+          loginTime: new Date(),
+          deviceInfo: req.headers['user-agent'] || 'Unknown device',
+          ipAddress: req.ip || req.connection.remoteAddress || 'Unknown IP'
+        });
+        console.log(`📧 Login success email sent to: ${user.email}`);
+      } catch (emailError) {
+        console.error('Failed to send login success email:', emailError);
+        // Don't fail login if email fails
+      }
+    }
+
     res.status(200).json({
       success: true,
       message: 'Login successful',

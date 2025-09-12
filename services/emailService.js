@@ -360,6 +360,196 @@ Team ${startupName}
 
     return templates[language] || templates.english;
   }
+
+  // Generate login success email content
+  generateLoginSuccessEmailContent(name, language = 'english', loginTime, deviceInfo, ipAddress) {
+    const startupName = 'Prani Mitra';
+    const tollFree = '1800-XXX-XXXX';
+    const website = 'https://prani-mitra1.vercel.app';
+    
+    const formatTime = (date) => {
+      return date.toLocaleString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    };
+
+    const templates = {
+      english: {
+        subject: `Login Successful - ${startupName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #ffffff;">
+            <h2 style="margin: 0 0 16px; color: #2e7d32;">Hello ${name},</h2>
+            <p style="color: #444; line-height: 1.7; margin: 0 0 16px;">
+              You have successfully logged into your <strong>${startupName}</strong> account.
+            </p>
+
+            <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
+              <h3 style="color: #1b5e20; margin: 0 0 12px;">Login Details:</h3>
+              <p style="color: #444; margin: 4px 0;"><strong>Time:</strong> ${formatTime(loginTime)}</p>
+              <p style="color: #444; margin: 4px 0;"><strong>Device:</strong> ${deviceInfo}</p>
+              <p style="color: #444; margin: 4px 0;"><strong>IP Address:</strong> ${ipAddress}</p>
+            </div>
+
+            <p style="color: #444; line-height: 1.7; margin: 16px 0;">
+              If this login was not authorized by you, please contact our support team immediately.
+            </p>
+
+            <p style="color: #2e7d32; font-weight: bold; margin: 24px 0 8px;">Happy Farming,</p>
+            <p style="color: #444; margin: 0 0 4px;">Team ${startupName}</p>
+            <p style="color: #444; margin: 0 0 4px;">📞 Helpline: ${tollFree}</p>
+            <p style="color: #444; margin: 0;">🌐 Website: <a href="${website}" style="color: #2e7d32; text-decoration: none;">${website}</a></p>
+          </div>
+        `,
+        text: `
+Hello ${name},
+
+You have successfully logged into your ${startupName} account.
+
+Login Details:
+- Time: ${formatTime(loginTime)}
+- Device: ${deviceInfo}
+- IP Address: ${ipAddress}
+
+If this login was not authorized by you, please contact our support team immediately.
+
+Happy Farming,
+Team ${startupName}
+📞 Helpline: ${tollFree}
+🌐 Website: ${website}
+        `
+      },
+      hindi: {
+        subject: `लॉगिन सफल - ${startupName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #ffffff;">
+            <h2 style="margin: 0 0 16px; color: #2e7d32;">नमस्ते ${name},</h2>
+            <p style="color: #444; line-height: 1.7; margin: 0 0 16px;">
+              आपने अपने <strong>${startupName}</strong> खाते में सफलतापूर्वक लॉगिन किया है।
+            </p>
+
+            <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
+              <h3 style="color: #1b5e20; margin: 0 0 12px;">लॉगिन विवरण:</h3>
+              <p style="color: #444; margin: 4px 0;"><strong>समय:</strong> ${formatTime(loginTime)}</p>
+              <p style="color: #444; margin: 4px 0;"><strong>डिवाइस:</strong> ${deviceInfo}</p>
+              <p style="color: #444; margin: 4px 0;"><strong>आईपी पता:</strong> ${ipAddress}</p>
+            </div>
+
+            <p style="color: #444; line-height: 1.7; margin: 16px 0;">
+              यदि यह लॉगिन आपके द्वारा अधिकृत नहीं था, तो कृपया तुरंत हमारी सहायता टीम से संपर्क करें।
+            </p>
+
+            <p style="color: #2e7d32; font-weight: bold; margin: 24px 0 8px;">खुशहाल खेती,</p>
+            <p style="color: #444; margin: 0 0 4px;">टीम ${startupName}</p>
+            <p style="color: #444; margin: 0 0 4px;">📞 हेल्पलाइन: ${tollFree}</p>
+            <p style="color: #444; margin: 0;">🌐 वेबसाइट: <a href="${website}" style="color: #2e7d32; text-decoration: none;">${website}</a></p>
+          </div>
+        `,
+        text: `
+नमस्ते ${name},
+
+आपने अपने ${startupName} खाते में सफलतापूर्वक लॉगिन किया है।
+
+लॉगिन विवरण:
+- समय: ${formatTime(loginTime)}
+- डिवाइस: ${deviceInfo}
+- आईपी पता: ${ipAddress}
+
+यदि यह लॉगिन आपके द्वारा अधिकृत नहीं था, तो कृपया तुरंत हमारी सहायता टीम से संपर्क करें।
+
+खुशहाल खेती,
+टीम ${startupName}
+📞 हेल्पलाइन: ${tollFree}
+🌐 वेबसाइट: ${website}
+        `
+      },
+      telugu: {
+        subject: `లాగిన్ విజయవంతం - ${startupName}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #ffffff;">
+            <h2 style="margin: 0 0 16px; color: #2e7d32;">నమస్కారం ${name},</h2>
+            <p style="color: #444; line-height: 1.7; margin: 0 0 16px;">
+              మీరు మీ <strong>${startupName}</strong> ఖాతాలో విజయవంతంగా లాగిన్ అయ్యారు.
+            </p>
+
+            <div style="background: #f5f5f5; padding: 16px; border-radius: 8px; margin: 16px 0;">
+              <h3 style="color: #1b5e20; margin: 0 0 12px;">లాగిన్ వివరాలు:</h3>
+              <p style="color: #444; margin: 4px 0;"><strong>సమయం:</strong> ${formatTime(loginTime)}</p>
+              <p style="color: #444; margin: 4px 0;"><strong>పరికరం:</strong> ${deviceInfo}</p>
+              <p style="color: #444; margin: 4px 0;"><strong>ఐపి చిరునామా:</strong> ${ipAddress}</p>
+            </div>
+
+            <p style="color: #444; line-height: 1.7; margin: 16px 0;">
+              ఈ లాగిన్ మీరు అధికారం ఇవ్వకపోతే, దయచేసి వెంటనే మా సహాయక బృందాన్ని సంప్రదించండి.
+            </p>
+
+            <p style="color: #2e7d32; font-weight: bold; margin: 24px 0 8px;">శుభ వ్యవసాయం,</p>
+            <p style="color: #444; margin: 0 0 4px;">టీమ్ ${startupName}</p>
+            <p style="color: #444; margin: 0 0 4px;">📞 హెల్ప్‌లైన్: ${tollFree}</p>
+            <p style="color: #444; margin: 0;">🌐 వెబ్‌సైట్: <a href="${website}" style="color: #2e7d32; text-decoration: none;">${website}</a></p>
+          </div>
+        `,
+        text: `
+నమస్కారం ${name},
+
+మీరు మీ ${startupName} ఖాతాలో విజయవంతంగా లాగిన్ అయ్యారు.
+
+లాగిన్ వివరాలు:
+- సమయం: ${formatTime(loginTime)}
+- పరికరం: ${deviceInfo}
+- ఐపి చిరునామా: ${ipAddress}
+
+ఈ లాగిన్ మీరు అధికారం ఇవ్వకపోతే, దయచేసి వెంటనే మా సహాయక బృందాన్ని సంప్రదించండి.
+
+శుభ వ్యవసాయం,
+టీమ్ ${startupName}
+📞 హెల్ప్‌లైన్: ${tollFree}
+🌐 వెబ్‌సైట్: ${website}
+        `
+      }
+    };
+
+    return templates[language] || templates.english;
+  }
+
+  // Send login success email
+  async sendLoginSuccessEmail({ to, name, language = 'english', loginTime, deviceInfo, ipAddress }) {
+    try {
+      if (!this.transporter) {
+        throw new Error('Email service not configured');
+      }
+
+      const content = this.generateLoginSuccessEmailContent(name, language, loginTime, deviceInfo, ipAddress);
+
+      const mailOptions = {
+        from: this.getFromAddress(),
+        to: to,
+        subject: content.subject,
+        html: content.html,
+        text: content.text
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      
+      return {
+        success: true,
+        messageId: result.messageId,
+        email: to
+      };
+
+    } catch (error) {
+      console.error('Login success email error:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
 }
 
 module.exports = new EmailService();
