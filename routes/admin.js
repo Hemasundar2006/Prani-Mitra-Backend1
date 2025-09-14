@@ -1527,4 +1527,286 @@ router.get('/users', authenticateToken, requireAdminOrSupport, [
   }
 });
 
+// @route   GET /api/admin/farmers/dashboard
+// @desc    Get farmers data formatted for admin dashboard
+// @access  Private/Admin
+router.get('/farmers/dashboard', authenticateToken, requireAdminOrSupport, [
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Page must be a positive integer'),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+  query('status')
+    .optional()
+    .isIn(['active', 'inactive', 'pending'])
+    .withMessage('Status must be active, inactive, or pending'),
+  query('verification')
+    .optional()
+    .isIn(['verified', 'unverified', 'pending'])
+    .withMessage('Verification must be verified, unverified, or pending'),
+  query('search')
+    .optional()
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Search term must be between 1 and 100 characters'),
+  query('sortBy')
+    .optional()
+    .isIn(['name', 'email', 'phoneNumber', 'createdAt', 'lastLogin'])
+    .withMessage('Invalid sort field'),
+  query('sortOrder')
+    .optional()
+    .isIn(['asc', 'desc'])
+    .withMessage('Sort order must be asc or desc')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      verification,
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Build filter object for farmers only
+    const filter = { role: 'farmer' };
+
+    // Add status filter
+    if (status) {
+      if (status === 'pending') {
+        filter.isActive = { $exists: false };
+      } else {
+        filter.isActive = status === 'active';
+      }
+    }
+
+    // Add verification filter
+    if (verification) {
+      if (verification === 'pending') {
+        filter.isVerified = { $exists: false };
+      } else {
+        filter.isVerified = verification === 'verified';
+      }
+    }
+
+    // Add search filter
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phoneNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Build sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Execute query
+    const [farmers, totalCount] = await Promise.all([
+      User.find(filter)
+        .select('-password -passwordResetToken -passwordResetExpires -setupToken -setupTokenExpires')
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      User.countDocuments(filter)
+    ]);
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalCount / parseInt(limit));
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    // Format response for dashboard
+    const formattedFarmers = farmers.map(farmer => {
+      // Generate truncated and full user ID
+      const fullUserId = farmer._id.toString();
+      const truncatedUserId = fullUserId.substring(0, 8) + '...' + fullUserId.substring(fullUserId.length - 4);
+      
+      // Determine plan subscription status
+      const planStatus = farmer.subscriptionStatus || 'free';
+      const planExpiration = farmer.subscriptionExpiresAt || null;
+      
+      // Determine verification status
+      let verificationStatus = 'unverified';
+      if (farmer.isVerified === true) {
+        verificationStatus = 'verified';
+      } else if (farmer.isVerified === false) {
+        verificationStatus = 'pending';
+      }
+
+      return {
+        // Basic Info
+        name: farmer.name,
+        email: farmer.email || null,
+        phone: farmer.phoneNumber,
+        avatar: farmer.profilePicture || null,
+        
+        // User ID
+        userId: {
+          truncated: truncatedUserId,
+          full: fullUserId
+        },
+        
+        // Plan Subscription
+        planSubscription: {
+          status: planStatus,
+          planId: farmer.planId || null,
+          expirationDate: planExpiration
+        },
+        
+        // Created Date
+        createdDate: farmer.createdAt,
+        
+        // Status
+        isActive: farmer.isActive !== false, // Default to true if not set
+        verificationStatus: verificationStatus,
+        
+        // Actions (these will be handled on frontend)
+        actions: {
+          canView: true,
+          canApprove: verificationStatus === 'pending',
+          canReject: verificationStatus === 'pending',
+          canActivate: !farmer.isActive,
+          canDeactivate: farmer.isActive !== false
+        }
+      };
+    });
+
+    res.json({
+      success: true,
+      message: 'Farmers dashboard data retrieved successfully',
+      data: {
+        farmers: formattedFarmers,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalCount,
+          hasNextPage,
+          hasPrevPage,
+          limit: parseInt(limit)
+        },
+        summary: {
+          total: totalCount,
+          verified: farmers.filter(f => f.isVerified === true).length,
+          pending: farmers.filter(f => f.isVerified === false || f.isVerified === undefined).length,
+          active: farmers.filter(f => f.isActive !== false).length,
+          inactive: farmers.filter(f => f.isActive === false).length
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching farmers dashboard data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch farmers dashboard data',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+// @route   POST /api/admin/farmers/:id/approve
+// @desc    Approve a farmer's account
+// @access  Private/Admin
+router.post('/farmers/:id/approve', authenticateToken, requireAdminOrSupport, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const farmer = await User.findByIdAndUpdate(
+      id,
+      { 
+        isVerified: true,
+        isActive: true,
+        verifiedAt: new Date()
+      },
+      { new: true }
+    ).select('-password');
+
+    if (!farmer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farmer not found'
+      });
+    }
+
+    if (farmer.role !== 'farmer') {
+      return res.status(400).json({
+        success: false,
+        message: 'User is not a farmer'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Farmer approved successfully',
+      data: { farmer }
+    });
+
+  } catch (error) {
+    console.error('Error approving farmer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to approve farmer',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
+// @route   POST /api/admin/farmers/:id/reject
+// @desc    Reject a farmer's account
+// @access  Private/Admin
+router.post('/farmers/:id/reject', authenticateToken, requireAdminOrSupport, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const farmer = await User.findByIdAndUpdate(
+      id,
+      { 
+        isVerified: false,
+        isActive: false,
+        rejectionReason: reason,
+        rejectedAt: new Date()
+      },
+      { new: true }
+    ).select('-password');
+
+    if (!farmer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Farmer not found'
+      });
+    }
+
+    if (farmer.role !== 'farmer') {
+      return res.status(400).json({
+        success: false,
+        message: 'User is not a farmer'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Farmer rejected successfully',
+      data: { farmer }
+    });
+
+  } catch (error) {
+    console.error('Error rejecting farmer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reject farmer',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
 module.exports = router;

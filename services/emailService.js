@@ -180,7 +180,7 @@ class EmailService {
             ${bannerHTML}
             <h2 style="margin: 0 0 16px; color: #2e7d32;">Namaskaram ${name},</h2>
             <p style="color: #444; line-height: 1.7; margin: 0 0 16px;">
-              Welcome to <strong>${startupName}</strong> – your trusted voice-based farming helpdesk! We’re here to answer your farming questions, give you updates, and connect you to important schemes in your own language.
+              Welcome to <strong>${startupName}</strong> – your trusted voice-based farming helpdesk! We're here to answer your farming questions, give you updates, and connect you to important schemes in your own language.
             </p>
 
             <h3 style="color: #1b5e20; margin: 24px 0 12px;">📞 How it works:</h3>
@@ -201,7 +201,7 @@ class EmailService {
             </p>
 
             <p style="color: #444; line-height: 1.7; margin: 16px 0;">
-              We’re excited to support you in growing healthier crops, caring for your livestock, and staying informed.
+              We're excited to support you in growing healthier crops, caring for your livestock, and staying informed.
             </p>
 
             <p style="color: #2e7d32; font-weight: bold; margin: 24px 0 8px;">Happy Farming,</p>
@@ -213,7 +213,7 @@ class EmailService {
         text: `
 Namaskaram ${name},
 
-Welcome to ${startupName} – your trusted voice-based farming helpdesk! We’re here to answer your farming questions, give you updates, and connect you to important schemes in your own language.
+Welcome to ${startupName} – your trusted voice-based farming helpdesk! We're here to answer your farming questions, give you updates, and connect you to important schemes in your own language.
 
 How it works:
 1) Call our toll-free number: ${tollFree}
@@ -226,7 +226,7 @@ How it works:
 
 No internet needed. Just call and get instant answers from our AI-powered assistant, available 24/7.
 
-We’re excited to support you in growing healthier crops, caring for your livestock, and staying informed.
+We're excited to support you in growing healthier crops, caring for your livestock, and staying informed.
 
 Happy Farming,
 Team ${startupName}
