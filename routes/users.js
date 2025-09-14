@@ -4,7 +4,7 @@ const User = require('../models/User');
 const Call = require('../models/Call');
 const Payment = require('../models/Payment');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
-const weatherService = require('../services/weatherService');
+
 const router = express.Router();
 
 // Validation middleware
@@ -691,32 +691,3 @@ router.get('/', authenticateToken, requireAdmin, [
 });
 
 module.exports = router;
-
-// Weather: current weather for logged-in user's location
-// @route   GET /api/users/weather/current
-// @desc    Get current weather based on user's saved location (pincode preferred; fallback district/state)
-// @access  Private
-router.get('/weather/current', authenticateToken, async (req, res) => {
-  try {
-    const user = req.user;
-    // Build a geocoding query: prefer pincode, else district+state
-    const pincode = user.location?.pincode;
-    const district = user.location?.district;
-    const state = user.location?.state;
-    if (!pincode && !district && !state) {
-      return res.status(400).json({
-        success: false,
-        message: 'User location not set. Please update profile with pincode or district/state.'
-      });
-    }
-
-    const query = pincode ? `${pincode}, India` : [district, state, 'India'].filter(Boolean).join(', ');
-    const coords = await weatherService.geocode(query, { count: 1 });
-
-    const weather = await weatherService.getCurrentAndHourlyByCoords(coords.lat, coords.lon);
-    res.status(200).json({ success: true, data: weather });
-  } catch (error) {
-    console.error('Get current weather error:', error);
-    res.status(500).json({ success: false, message: 'Failed to fetch weather' });
-  }
-});
