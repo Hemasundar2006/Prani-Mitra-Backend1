@@ -351,7 +351,7 @@ ${startupName} కు స్వాగతం – మీ నమ్మకమైన 
 ఆరోగ్యకరమైన పంటలు, పశుసంరక్షణ మరియు సరైన సమాచారం కోసం మేము ఎల్లప్పుడూ మీతో ఉంటాము.
 
 శుభ వ్యవసాయం,
-Team ${startupName}
+టీమ్ ${startupName}
 📞 హెల్ప్‌లైన్: ${tollFree}
 🌐 వెబ్‌సైట్: ${website}
         `
@@ -901,6 +901,280 @@ Team ${startupName}
 
     } catch (error) {
       console.error('Password reset confirmation email error:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  // Send verification approval email
+  async sendVerificationApprovalEmail({ to, name, language = 'english' }) {
+    try {
+      if (!this.transporter) {
+        throw new Error('Email transporter not initialized');
+      }
+
+      const templates = {
+        english: {
+          subject: 'Account Verification Approved - Prani Mitra',
+          html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Verification Approved - Prani Mitra</title>
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+                .success { background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; margin: 20px 0; }
+                .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>🐄 Prani Mitra</h1>
+                  <p>Your Smart Farming Companion</p>
+                </div>
+                <div class="content">
+                  <h2>✅ Account Verification Approved!</h2>
+                  <p>Hello ${name},</p>
+                  <div class="success">
+                    <strong>Congratulations! Your account has been verified successfully.</strong>
+                    <p>You can now access all features of Prani Mitra.</p>
+                  </div>
+                  <p>Your account is now fully activated and you can:</p>
+                  <ul>
+                    <li>Make unlimited calls to our AI experts</li>
+                    <li>Access premium farming guides</li>
+                    <li>Get personalized crop advice</li>
+                    <li>Connect with other farmers</li>
+                  </ul>
+                  <p>Thank you for choosing Prani Mitra!</p>
+                </div>
+                <div class="footer">
+                  <p>© 2024 Prani Mitra. All rights reserved.</p>
+                  <p>This is an automated message, please do not reply.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `
+        },
+        hindi: {
+          subject: 'खाता सत्यापन स्वीकृत - Prani Mitra',
+          html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>सत्यापन स्वीकृत - Prani Mitra</title>
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+                .success { background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; margin: 20px 0; }
+                .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>🐄 Prani Mitra</h1>
+                  <p>आपका स्मार्ट फार्मिंग साथी</p>
+                </div>
+                <div class="content">
+                  <h2>✅ खाता सत्यापन स्वीकृत!</h2>
+                  <p>नमस्ते ${name},</p>
+                  <div class="success">
+                    <strong>बधाई हो! आपका खाता सफलतापूर्वक सत्यापित हो गया है।</strong>
+                    <p>अब आप Prani Mitra की सभी सुविधाओं का उपयोग कर सकते हैं।</p>
+                  </div>
+                  <p>आपका खाता अब पूरी तरह सक्रिय है और आप कर सकते हैं:</p>
+                  <ul>
+                    <li>हमारे AI विशेषज्ञों से असीमित कॉल करें</li>
+                    <li>प्रीमियम फार्मिंग गाइड तक पहुंचें</li>
+                    <li>व्यक्तिगत फसल सलाह प्राप्त करें</li>
+                    <li>अन्य किसानों से जुड़ें</li>
+                  </ul>
+                  <p>Prani Mitra चुनने के लिए धन्यवाद!</p>
+                </div>
+                <div class="footer">
+                  <p>© 2024 Prani Mitra. सभी अधिकार सुरक्षित।</p>
+                  <p>यह एक स्वचालित संदेश है, कृपया जवाब न दें।</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `
+        },
+        telugu: {
+          subject: 'ఖాతా ధృవీకరణ ఆమోదించబడింది - Prani Mitra',
+          html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>ధృవీకరణ ఆమోదించబడింది - Prani Mitra</title>
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+                .success { background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 5px; margin: 20px 0; }
+                .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>🐄 Prani Mitra</h1>
+                  <p>మీ స్మార్ట్ ఫార్మింగ్ కంపానియన్</p>
+                </div>
+                <div class="content">
+                  <h2>✅ ఖాతా ధృవీకరణ ఆమోదించబడింది!</h2>
+                  <p>హలో ${name},</p>
+                  <div class="success">
+                    <strong>అభినందనలు! మీ ఖాతా విజయవంతంగా ధృవీకరించబడింది.</strong>
+                    <p>ఇప్పుడు మీ Prani Mitra యొక్క అన్ని లక్షణాలను ఉపయోగించవచ్చు.</p>
+                  </div>
+                  <p>మీ ఖాతా ఇప్పుడు పూర్తిగా సక్రియం మరియు మీరు చేయవచ్చు:</p>
+                  <ul>
+                    <li>మా AI నిపుణులకు అపరిమిత కాల్‌లు చేయండి</li>
+                    <li>ప్రీమియం ఫార్మింగ్ గైడ్‌లకు ప్రాప్యత పొందండి</li>
+                    <li>వ్యక్తిగత పంట సలహాలు పొందండి</li>
+                    <li>ఇతర రైతులతో కనెక్ట్ అవండి</li>
+                  </ul>
+                  <p>ఇంటర్నెట్ అవసరం లేదు. 24/7 అందుబాటులో ఉండే మా AI సహాయకుడి ద్వారా వెంటనే సమాధానాలు పొందండి.</p>
+                  <p>ఆరోగ్యకరమైన పంటలు, పశుసంరక్షణ మరియు సరైన సమాచారం కోసం మేము ఎల్లప్పుడూ మీతో ఉంటాము.</p>
+                  <p style="color: #2e7d32; font-weight: bold; margin: 24px 0 8px;">శుభ వ్యవసాయం,</p>
+                  <p style="color: #444; margin: 0 0 4px;">టీమ్ ${startupName}</p>
+                  <p style="color: #444; margin: 0 0 4px;">📞 హెల్ప్‌లైన్: ${tollFree}</p>
+                  <p style="color: #444; margin: 0;">🌐 వెబ్‌సైట్: <a href="${website}" style="color: #2e7d32; text-decoration: none;">${website}</a></p>
+                </div>
+                <div class="footer">
+                  <p>© 2024 Prani Mitra. అన్ని హక్కులు ప్రత్యేకించబడ్డాయి.</p>
+                  <p>ఇది స్వయంచాలక సందేశం, దయచేసి ప్రత్యుత్తరం ఇవ్వకండి.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `
+        }
+      };
+
+      const template = templates[language] || templates.english;
+
+      const mailOptions = {
+        from: `"Prani Mitra" <${process.env.EMAIL_USER || 'noreply@pranimitra.com'}>`,
+        to: to,
+        subject: template.subject,
+        html: template.html
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      
+      return {
+        success: true,
+        messageId: result.messageId,
+        email: to
+      };
+
+    } catch (error) {
+      console.error('Verification approval email error:', error);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  // Send verification rejection email
+  async sendVerificationRejectionEmail({ to, name, rejectionReason, language = 'english' }) {
+    try {
+      if (!this.transporter) {
+        throw new Error('Email transporter not initialized');
+      }
+
+      const templates = {
+        english: {
+          subject: 'Account Verification Update - Prani Mitra',
+          html: `
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Verification Update - Prani Mitra</title>
+              <style>
+                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+                .header { background: linear-gradient(135deg, #4CAF50, #45a049); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+                .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+                .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
+                .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+              </style>
+            </head>
+            <body>
+              <div class="container">
+                <div class="header">
+                  <h1>🐄 Prani Mitra</h1>
+                  <p>Your Smart Farming Companion</p>
+                </div>
+                <div class="content">
+                  <h2>📋 Account Verification Update</h2>
+                  <p>Hello ${name},</p>
+                  <div class="warning">
+                    <strong>Your account verification requires additional information.</strong>
+                    <p><strong>Reason:</strong> ${rejectionReason}</p>
+                  </div>
+                  <p>Please review the feedback above and resubmit your verification with the required information.</p>
+                  <p>You can resubmit your verification by:</p>
+                  <ol>
+                    <li>Logging into your account</li>
+                    <li>Going to the verification section</li>
+                    <li>Uploading the required documents</li>
+                    <li>Submitting for review again</li>
+                  </ol>
+                  <p>If you have any questions, please contact our support team.</p>
+                </div>
+                <div class="footer">
+                  <p>© 2024 Prani Mitra. All rights reserved.</p>
+                  <p>This is an automated message, please do not reply.</p>
+                </div>
+              </div>
+            </body>
+            </html>
+          `
+        }
+      };
+
+      const template = templates[language] || templates.english;
+
+      const mailOptions = {
+        from: `"Prani Mitra" <${process.env.EMAIL_USER || 'noreply@pranimitra.com'}>`,
+        to: to,
+        subject: template.subject,
+        html: template.html
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      
+      return {
+        success: true,
+        messageId: result.messageId,
+        email: to
+      };
+
+    } catch (error) {
+      console.error('Verification rejection email error:', error);
       return {
         success: false,
         error: error.message

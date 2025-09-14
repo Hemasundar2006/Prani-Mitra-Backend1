@@ -40,6 +40,37 @@ const userSchema = new mongoose.Schema({
     type: [String],
     enum: ['crops', 'dairy', 'poultry', 'goats', 'sheep', 'fishery', 'mixed']
   },
+  // Updated verification system
+  verification: {
+    status: {
+      type: String,
+      enum: ['pending', 'approved', 'rejected'],
+      default: 'pending'
+    },
+    submittedAt: {
+      type: Date,
+      default: Date.now
+    },
+    reviewedAt: Date,
+    reviewedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    rejectionReason: String,
+    documents: [{
+      type: {
+        type: String,
+        enum: ['id_proof', 'address_proof', 'farming_certificate', 'other']
+      },
+      url: String,
+      filename: String,
+      uploadedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    notes: String
+  },
   isVerified: {
     type: Boolean,
     default: false
@@ -113,8 +144,17 @@ const userSchema = new mongoose.Schema({
       default: 'Asia/Kolkata'
     }
   },
-  // Password reset fields (NEW)
+  // Password reset fields
   passwordReset: {
+    token: String,
+    expires: Date,
+    used: {
+      type: Boolean,
+      default: false
+    }
+  },
+  // Password setup fields
+  passwordSetup: {
     token: String,
     expires: Date,
     used: {
@@ -143,6 +183,10 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ phoneNumber: 1 });
 userSchema.index({ 'subscription.status': 1 });
 userSchema.index({ createdAt: -1 });
+
+// Add verification status index
+userSchema.index({ 'verification.status': 1 });
+userSchema.index({ 'verification.submittedAt': -1 });
 
 // Virtual for full name display
 userSchema.virtual('displayName').get(function() {
@@ -240,5 +284,31 @@ userSchema.pre('save', async function(next) {
   
   next();
 });
+
+// Method to submit verification
+userSchema.methods.submitVerification = function(documents, notes) {
+  this.verification.status = 'pending';
+  this.verification.submittedAt = new Date();
+  this.verification.documents = documents || [];
+  this.verification.notes = notes;
+  this.isVerified = false;
+};
+
+// Method to approve verification
+userSchema.methods.approveVerification = function(reviewedBy) {
+  this.verification.status = 'approved';
+  this.verification.reviewedAt = new Date();
+  this.verification.reviewedBy = reviewedBy;
+  this.isVerified = true;
+};
+
+// Method to reject verification
+userSchema.methods.rejectVerification = function(reviewedBy, rejectionReason) {
+  this.verification.status = 'rejected';
+  this.verification.reviewedAt = new Date();
+  this.verification.reviewedBy = reviewedBy;
+  this.verification.rejectionReason = rejectionReason;
+  this.isVerified = false;
+};
 
 module.exports = mongoose.model('User', userSchema);

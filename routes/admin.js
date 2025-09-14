@@ -813,4 +813,456 @@ function convertToCSV(data) {
   return [csvHeaders, ...csvRows].join('\n');
 }
 
+// @route   GET /api/admin/verifications
+// @desc    Get all user verifications with filtering
+// @access  Private/Admin
+router.get('/verifications', authenticateToken, requireAdminOrSupport, [
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Page must be a positive integer'),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+  query('status')
+    .optional()
+    .isIn(['pending', 'approved', 'rejected'])
+    .withMessage('Status must be pending, approved, or rejected'),
+  query('sortBy')
+    .optional()
+    .isIn(['submittedAt', 'reviewedAt', 'name', 'createdAt'])
+    .withMessage('Invalid sort field'),
+  query('sortOrder')
+    .optional()
+    .isIn(['asc', 'desc'])
+    .withMessage('Sort order must be asc or desc')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      search,
+      sortBy = 'submittedAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Build filter
+    const filter = {};
+    
+    if (status) {
+      filter['verification.status'] = status;
+    }
+    
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phoneNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Get users with verification data
+    const users = await User.find(filter)
+      .select('-password -__v')
+      .sort({ [sortBy]: sortOrder === 'desc' ? -1 : 1 })
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .limit(parseInt(limit))
+      .populate('verification.reviewedBy', 'name email')
+      .lean();
+
+    // Get total count for pagination
+    const totalUsers = await User.countDocuments(filter);
+
+    // Add computed fields
+    const enrichedUsers = users.map(user => ({
+      ...user,
+      verificationStatus: user.verification?.status || 'pending',
+      submittedAt: user.verification?.submittedAt,
+      reviewedAt: user.verification?.reviewedAt,
+      reviewedBy: user.verification?.reviewedBy,
+      rejectionReason: user.verification?.rejectionReason,
+      documents: user.verification?.documents || [],
+      verificationNotes: user.verification?.notes,
+      daysSinceSubmission: user.verification?.submittedAt ? 
+        Math.floor((new Date() - new Date(user.verification.submittedAt)) / (1000 * 60 * 60 * 24)) : 0
+    }));
+
+    const totalPages = Math.ceil(totalUsers / parseInt(limit));
+
+    res.status(200).json({
+      success: true,
+      data: {
+        verifications: enrichedUsers,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalUsers,
+          hasNextPage: parseInt(page) < totalPages,
+          hasPrevPage: parseInt(page) > 1,
+          limit: parseInt(limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get verifications error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch verifications'
+    });
+  }
+});
+
+// @route   GET /api/admin/verifications/stats
+// @desc    Get verification statistics
+// @access  Private/Admin
+router.get('/verifications/stats', authenticateToken, requireAdminOrSupport, async (req, res) => {
+  try {
+    const { period = '30d' } = req.query;
+    
+    // Calculate date range
+    const now = new Date();
+    let startDate = new Date();
+    
+    switch (period) {
+      case '7d':
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case '30d':
+        startDate.setDate(now.getDate() - 30);
+        break;
+      case '90d':
+        startDate.setDate(now.getDate() - 90);
+        break;
+      case '1y':
+        startDate.setFullYear(now.getFullYear() - 1);
+        break;
+      default:
+        startDate.setDate(now.getDate() - 30);
+    }
+
+    // Get verification statistics
+    const [
+      totalPending,
+      totalApproved,
+      totalRejected,
+      recentSubmissions,
+      recentApprovals,
+      recentRejections,
+      avgProcessingTime
+    ] = await Promise.all([
+      User.countDocuments({ 'verification.status': 'pending' }),
+      User.countDocuments({ 'verification.status': 'approved' }),
+      User.countDocuments({ 'verification.status': 'rejected' }),
+      User.countDocuments({ 
+        'verification.submittedAt': { $gte: startDate } 
+      }),
+      User.countDocuments({ 
+        'verification.status': 'approved',
+        'verification.reviewedAt': { $gte: startDate } 
+      }),
+      User.countDocuments({ 
+        'verification.status': 'rejected',
+        'verification.reviewedAt': { $gte: startDate } 
+      }),
+      User.aggregate([
+        {
+          $match: {
+            'verification.status': { $in: ['approved', 'rejected'] },
+            'verification.submittedAt': { $exists: true },
+            'verification.reviewedAt': { $exists: true }
+          }
+        },
+        {
+          $project: {
+            processingTime: {
+              $subtract: ['$verification.reviewedAt', '$verification.submittedAt']
+            }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            avgProcessingTime: { $avg: '$processingTime' }
+          }
+        }
+      ])
+    ]);
+
+    // Get pending verifications by age
+    const pendingByAge = await User.aggregate([
+      {
+        $match: { 'verification.status': 'pending' }
+      },
+      {
+        $project: {
+          daysSinceSubmission: {
+            $floor: {
+              $divide: [
+                { $subtract: [new Date(), '$verification.submittedAt'] },
+                1000 * 60 * 60 * 24
+              ]
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $switch: {
+              branches: [
+                { case: { $lte: ['$daysSinceSubmission', 1] }, then: '0-1 days' },
+                { case: { $lte: ['$daysSinceSubmission', 3] }, then: '2-3 days' },
+                { case: { $lte: ['$daysSinceSubmission', 7] }, then: '4-7 days' },
+                { case: { $lte: ['$daysSinceSubmission', 14] }, then: '8-14 days' }
+              ],
+              default: '15+ days'
+            }
+          },
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const stats = {
+      overview: {
+        totalPending,
+        totalApproved,
+        totalRejected,
+        totalVerifications: totalPending + totalApproved + totalRejected
+      },
+      recent: {
+        submissions: recentSubmissions,
+        approvals: recentApprovals,
+        rejections: recentRejections
+      },
+      processing: {
+        avgProcessingTimeHours: avgProcessingTime[0]?.avgProcessingTime ? 
+          Math.round(avgProcessingTime[0].avgProcessingTime / (1000 * 60 * 60)) : 0
+      },
+      pendingByAge,
+      period
+    };
+
+    res.status(200).json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    console.error('Get verification stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch verification statistics'
+    });
+  }
+});
+
+// @route   PUT /api/admin/verifications/:userId/approve
+// @desc    Approve user verification
+// @access  Private/Admin
+router.put('/verifications/:userId/approve', authenticateToken, requireAdmin, [
+  body('notes')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Notes must not exceed 500 characters')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { notes } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.verification.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'User verification is not pending',
+        code: 'VERIFICATION_NOT_PENDING'
+      });
+    }
+
+    // Approve verification
+    user.approveVerification(req.userId);
+    if (notes) {
+      user.verification.notes = notes;
+    }
+    
+    await user.save();
+
+    // Send approval notification email
+    try {
+      const emailService = require('../services/emailService');
+      await emailService.sendVerificationApprovalEmail({
+        to: user.email,
+        name: user.name,
+        language: user.preferredLanguage || 'english'
+      });
+    } catch (emailError) {
+      console.error('Verification approval email error:', emailError);
+      // Don't fail the request if email fails
+    }
+
+    console.log(`✅ Verification approved for user: ${user.name} (${user.email}) by admin: ${req.user.name}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'User verification approved successfully',
+      data: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        verificationStatus: 'approved',
+        reviewedAt: user.verification.reviewedAt,
+        reviewedBy: req.user.name
+      }
+    });
+
+  } catch (error) {
+    console.error('Approve verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to approve verification'
+    });
+  }
+});
+
+// @route   PUT /api/admin/verifications/:userId/reject
+// @desc    Reject user verification
+// @access  Private/Admin
+router.put('/verifications/:userId/reject', authenticateToken, requireAdmin, [
+  body('rejectionReason')
+    .notEmpty()
+    .trim()
+    .isLength({ min: 10, max: 500 })
+    .withMessage('Rejection reason must be between 10 and 500 characters'),
+  body('notes')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Notes must not exceed 500 characters')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { rejectionReason, notes } = req.body;
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.verification.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: 'User verification is not pending',
+        code: 'VERIFICATION_NOT_PENDING'
+      });
+    }
+
+    // Reject verification
+    user.rejectVerification(req.userId, rejectionReason);
+    if (notes) {
+      user.verification.notes = notes;
+    }
+    
+    await user.save();
+
+    // Send rejection notification email
+    try {
+      const emailService = require('../services/emailService');
+      await emailService.sendVerificationRejectionEmail({
+        to: user.email,
+        name: user.name,
+        rejectionReason: rejectionReason,
+        language: user.preferredLanguage || 'english'
+      });
+    } catch (emailError) {
+      console.error('Verification rejection email error:', emailError);
+      // Don't fail the request if email fails
+    }
+
+    console.log(`❌ Verification rejected for user: ${user.name} (${user.email}) by admin: ${req.user.name}`);
+
+    res.status(200).json({
+      success: true,
+      message: 'User verification rejected successfully',
+      data: {
+        userId: user._id,
+        name: user.name,
+        email: user.email,
+        verificationStatus: 'rejected',
+        rejectionReason: rejectionReason,
+        reviewedAt: user.verification.reviewedAt,
+        reviewedBy: req.user.name
+      }
+    });
+
+  } catch (error) {
+    console.error('Reject verification error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reject verification'
+    });
+  }
+});
+
+// @route   GET /api/admin/verifications/:userId
+// @desc    Get specific user verification details
+// @access  Private/Admin
+router.get('/verifications/:userId', authenticateToken, requireAdminOrSupport, async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId)
+      .select('-password -__v')
+      .populate('verification.reviewedBy', 'name email')
+      .lean();
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const verificationDetails = {
+      ...user,
+      verificationStatus: user.verification?.status || 'pending',
+      submittedAt: user.verification?.submittedAt,
+      reviewedAt: user.verification?.reviewedAt,
+      reviewedBy: user.verification?.reviewedBy,
+      rejectionReason: user.verification?.rejectionReason,
+      documents: user.verification?.documents || [],
+      verificationNotes: user.verification?.notes,
+      daysSinceSubmission: user.verification?.submittedAt ? 
+        Math.floor((new Date() - new Date(user.verification.submittedAt)) / (1000 * 60 * 60 * 24)) : 0
+    };
+
+    res.status(200).json({
+      success: true,
+      data: {
+        user: verificationDetails
+      }
+    });
+
+  } catch (error) {
+    console.error('Get verification details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch verification details'
+    });
+  }
+});
+
 module.exports = router;
