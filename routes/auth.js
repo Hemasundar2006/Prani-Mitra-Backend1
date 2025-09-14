@@ -50,6 +50,12 @@ const validateRegistration = [
     .matches(/^[a-zA-Z\s]+$/)
     .withMessage('Name can only contain letters and spaces'),
   
+  // Role validation (NEW)
+  body('role')
+    .optional()
+    .isIn(['farmer', 'admin'])
+    .withMessage('Role must be either farmer or admin'),
+  
   // Email validation (optional but must be valid if provided)
   body('email')
     .optional({ checkFalsy: true })
@@ -169,18 +175,19 @@ const handleValidationErrors = (req, res, next) => {
 };
 
 // @route   POST /api/auth/register
-// @desc    Register new user with password
+// @desc    Register new user with password and role selection
 // @access  Public
 // @validation Comprehensive validation including:
 //           - Phone: Indian mobile format (10 digits, starts with 6-9)
 //           - Password: Min 6 chars, contains letter & number
 //           - Name: 2-100 chars, letters and spaces only
+//           - Role: farmer or admin (optional, defaults to farmer)
 //           - Email: Valid format (optional)
 //           - Location: Valid Indian pincode format (optional)
 //           - FarmingTypes: Max 5 types from predefined list (optional)
 router.post('/register', registerRateLimit, validateRegistration, handleValidationErrors, async (req, res) => {
   try {
-    const { phoneNumber, password, name, preferredLanguage, location, farmingTypes, email } = req.body;
+    const { phoneNumber, password, name, preferredLanguage, location, farmingTypes, email, role } = req.body;
 
     // Normalize and validate phone number
     const phone = phoneNumber.replace(/\D/g, '');
@@ -210,6 +217,16 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
         success: false,
         message: 'Name must be at least 2 characters long',
         code: 'INVALID_NAME'
+      });
+    }
+
+    // Validate role
+    const userRole = role || 'farmer'; // Default to farmer if not specified
+    if (!['farmer', 'admin'].includes(userRole)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Role must be either farmer or admin',
+        code: 'INVALID_ROLE'
       });
     }
 
@@ -288,9 +305,20 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
       preferredLanguage: preferredLanguage || 'english',
       location: location || {},
       farmingType: farmingTypes || [], // Map farmingTypes to farmingType for database
+      role: userRole, // Set the role
       isVerified: true,
       lastLogin: new Date()
     };
+
+    // If admin role, set additional properties
+    if (userRole === 'admin') {
+      userData.subscription = {
+        status: 'active',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000), // 1 year from now
+        autoRenewal: true
+      };
+    }
 
     const user = new User(userData);
     await user.save();
@@ -304,9 +332,9 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
         name: user.name,
         email: user.email,
         phoneNumber: user.phoneNumber,
-        preferredLanguage: user.preferredLanguage  // This will be 'telugu'
+        preferredLanguage: user.preferredLanguage
       }).then(result => {
-        // Email sent in Telugu
+        // Email sent
       }).catch(error => {
         console.error(`❌ Welcome email error for ${user.email}:`, error);
       });
@@ -328,11 +356,11 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
       createdAt: user.createdAt
     };
 
-    console.log(`✅ New user registered: ${user.name} (${phone})`);
+    console.log(`✅ New ${userRole} registered: ${user.name} (${phone})`);
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful',
+      message: `${userRole === 'admin' ? 'Admin' : 'User'} registration successful`,
       data: {
         user: responseUser,
         token,
@@ -347,14 +375,14 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
       return res.status(409).json({
         success: false,
         message: 'User already exists with this phone number',
-        code: 'DUPLICATE_USER'
+        code: 'USER_EXISTS'
       });
     }
     
     res.status(500).json({
       success: false,
       message: 'Registration failed',
-      error: process.env.NODE_ENV === 'production' ? error.message : undefined
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });
