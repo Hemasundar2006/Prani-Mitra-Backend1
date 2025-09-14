@@ -1397,4 +1397,146 @@ router.get('/users/farmers', authenticateToken, requireAdminOrSupport, [
   }
 });
 
+// @route   GET /api/admin/users
+// @desc    Get all users for admin management
+// @access  Private/Admin
+router.get('/users', authenticateToken, requireAdminOrSupport, [
+  query('page')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Page must be a positive integer'),
+  query('limit')
+    .optional()
+    .isInt({ min: 1, max: 100 })
+    .withMessage('Limit must be between 1 and 100'),
+  query('status')
+    .optional()
+    .isIn(['active', 'inactive'])
+    .withMessage('Status must be active or inactive'),
+  query('role')
+    .optional()
+    .isIn(['farmer', 'admin', 'support'])
+    .withMessage('Role must be farmer, admin, or support'),
+  query('subscription')
+    .optional()
+    .isIn(['free', 'active', 'expired', 'cancelled'])
+    .withMessage('Invalid subscription status'),
+  query('search')
+    .optional()
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Search term must be between 1 and 100 characters'),
+  query('sortBy')
+    .optional()
+    .isIn(['name', 'email', 'phoneNumber', 'createdAt', 'lastLogin'])
+    .withMessage('Invalid sort field'),
+  query('sortOrder')
+    .optional()
+    .isIn(['asc', 'desc'])
+    .withMessage('Sort order must be asc or desc')
+], handleValidationErrors, async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 20,
+      status,
+      role,
+      subscription,
+      search,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    // Build filter object
+    const filter = {};
+
+    // Add role filter
+    if (role) {
+      filter.role = role;
+    }
+
+    // Add status filter
+    if (status) {
+      filter.isActive = status === 'active';
+    }
+
+    // Add subscription filter
+    if (subscription) {
+      filter.subscriptionStatus = subscription;
+    }
+
+    // Add search filter
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phoneNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Build sort object
+    const sort = {};
+    sort[sortBy] = sortOrder === 'asc' ? 1 : -1;
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Execute query
+    const [users, totalCount] = await Promise.all([
+      User.find(filter)
+        .select('-password -passwordResetToken -passwordResetExpires -setupToken -setupTokenExpires')
+        .sort(sort)
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      User.countDocuments(filter)
+    ]);
+
+    // Calculate pagination info
+    const totalPages = Math.ceil(totalCount / parseInt(limit));
+    const hasNextPage = page < totalPages;
+    const hasPrevPage = page > 1;
+
+    // Format response
+    const formattedUsers = users.map(user => ({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      role: user.role,
+      isActive: user.isActive,
+      subscriptionStatus: user.subscriptionStatus,
+      location: user.location,
+      profilePicture: user.profilePicture,
+      createdAt: user.createdAt,
+      lastLogin: user.lastLogin,
+      verificationStatus: user.verificationStatus,
+      isVerified: user.isVerified
+    }));
+
+    res.json({
+      success: true,
+      message: 'Users retrieved successfully',
+      data: {
+        users: formattedUsers,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalCount,
+          hasNextPage,
+          hasPrevPage,
+          limit: parseInt(limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch users',
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
+    });
+  }
+});
+
 module.exports = router;
