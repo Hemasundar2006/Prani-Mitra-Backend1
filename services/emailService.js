@@ -517,42 +517,8 @@ Team ${startupName}
     return templates[language] || templates.english;
   }
 
-  // Send login success email
-  async sendLoginSuccessEmail({ to, name, language = 'english', loginTime, deviceInfo, ipAddress }) {
-    try {
-      if (!this.transporter) {
-        throw new Error('Email service not configured');
-      }
-
-      const content = this.generateLoginSuccessEmailContent(name, language, loginTime, deviceInfo, ipAddress);
-
-      const mailOptions = {
-        from: this.getFromAddress(),
-        to: to,
-        subject: content.subject,
-        html: content.html,
-        text: content.text
-      };
-
-      const result = await this.transporter.sendMail(mailOptions);
-      
-      return {
-        success: true,
-        messageId: result.messageId,
-        email: to
-      };
-
-    } catch (error) {
-      console.error('Login success email error:', error);
-      return {
-        success: false,
-        error: error.message
-      };
-    }
-  }
-
-  // Send password reset email
-  async sendPasswordResetEmail({ to, name, resetUrl, language = 'english' }) {
+  // Generate password setup email content
+  async sendPasswordSetupEmail({ to, name, setupUrl, language = 'english', sentBy = 'Admin' }) {
     try {
       if (!this.transporter) {
         throw new Error('Email transporter not initialized');
@@ -560,14 +526,14 @@ Team ${startupName}
 
       const templates = {
         english: {
-          subject: 'Reset Your Prani Mitra Password',
+          subject: 'Set Up Your Prani Mitra Account Password',
           html: `
             <!DOCTYPE html>
             <html>
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>Password Reset - Prani Mitra</title>
+              <title>Set Up Password - Prani Mitra</title>
               <style>
                 body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -576,6 +542,7 @@ Team ${startupName}
                 .button { display: inline-block; background: #4CAF50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
                 .button:hover { background: #45a049; }
                 .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+                .info { background: #e3f2fd; border: 1px solid #bbdefb; padding: 15px; border-radius: 5px; margin: 20px 0; }
                 .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
               </style>
             </head>
@@ -586,21 +553,29 @@ Team ${startupName}
                   <p>Your Smart Farming Companion</p>
                 </div>
                 <div class="content">
-                  <h2>Password Reset Request</h2>
+                  <h2>Welcome to Prani Mitra!</h2>
                   <p>Hello ${name},</p>
-                  <p>We received a request to reset your password for your Prani Mitra account.</p>
-                  <p>Click the button below to reset your password:</p>
-                  <a href="${resetUrl}" class="button">Reset Password</a>
+                  <p>Your Prani Mitra account has been created by ${sentBy}. To complete your account setup, you need to create a password.</p>
+                  <div class="info">
+                    <strong>📋 Account Details:</strong>
+                    <ul>
+                      <li>Email: ${to}</li>
+                      <li>Role: ${sentBy === 'Admin' ? 'Admin' : 'User'}</li>
+                      <li>Status: Pending Password Setup</li>
+                    </ul>
+                  </div>
+                  <p>Click the button below to set up your password:</p>
+                  <a href="${setupUrl}" class="button">Set Up Password</a>
                   <div class="warning">
                     <strong>⚠️ Important:</strong>
                     <ul>
-                      <li>This link will expire in 1 hour</li>
-                      <li>If you didn't request this reset, please ignore this email</li>
+                      <li>This link will expire in 24 hours</li>
+                      <li>You must set up your password to access your account</li>
                       <li>For security, don't share this link with anyone</li>
                     </ul>
                   </div>
                   <p>If the button doesn't work, copy and paste this link into your browser:</p>
-                  <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 5px;">${resetUrl}</p>
+                  <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 5px;">${setupUrl}</p>
                 </div>
                 <div class="footer">
                   <p>© 2024 Prani Mitra. All rights reserved.</p>
@@ -612,14 +587,14 @@ Team ${startupName}
           `
         },
         hindi: {
-          subject: 'अपना Prani Mitra पासवर्ड रीसेट करें',
+          subject: 'अपना Prani Mitra खाता पासवर्ड सेट करें',
           html: `
             <!DOCTYPE html>
             <html>
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>पासवर्ड रीसेट - Prani Mitra</title>
+              <title>पासवर्ड सेट करें - Prani Mitra</title>
               <style>
                 body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -628,6 +603,7 @@ Team ${startupName}
                 .button { display: inline-block; background: #4CAF50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
                 .button:hover { background: #45a049; }
                 .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+                .info { background: #e3f2fd; border: 1px solid #bbdefb; padding: 15px; border-radius: 5px; margin: 20px 0; }
                 .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
               </style>
             </head>
@@ -638,21 +614,29 @@ Team ${startupName}
                   <p>आपका स्मार्ट फार्मिंग साथी</p>
                 </div>
                 <div class="content">
-                  <h2>पासवर्ड रीसेट अनुरोध</h2>
+                  <h2>Prani Mitra में आपका स्वागत है!</h2>
                   <p>नमस्ते ${name},</p>
-                  <p>हमें आपके Prani Mitra खाते के लिए पासवर्ड रीसेट करने का अनुरोध प्राप्त हुआ है।</p>
-                  <p>अपना पासवर्ड रीसेट करने के लिए नीचे दिए गए बटन पर क्लिक करें:</p>
-                  <a href="${resetUrl}" class="button">पासवर्ड रीसेट करें</a>
+                  <p>${sentBy} द्वारा आपका Prani Mitra खाता बनाया गया है। अपना खाता सेटअप पूरा करने के लिए, आपको एक पासवर्ड बनाना होगा।</p>
+                  <div class="info">
+                    <strong>📋 खाता विवरण:</strong>
+                    <ul>
+                      <li>ईमेल: ${to}</li>
+                      <li>भूमिका: ${sentBy === 'Admin' ? 'एडमिन' : 'उपयोगकर्ता'}</li>
+                      <li>स्थिति: पासवर्ड सेटअप लंबित</li>
+                    </ul>
+                  </div>
+                  <p>अपना पासवर्ड सेट करने के लिए नीचे दिए गए बटन पर क्लिक करें:</p>
+                  <a href="${setupUrl}" class="button">पासवर्ड सेट करें</a>
                   <div class="warning">
                     <strong>⚠️ महत्वपूर्ण:</strong>
                     <ul>
-                      <li>यह लिंक 1 घंटे में समाप्त हो जाएगा</li>
-                      <li>यदि आपने यह रीसेट नहीं मांगा है, तो कृपया इस ईमेल को नजरअंदाज करें</li>
+                      <li>यह लिंक 24 घंटे में समाप्त हो जाएगा</li>
+                      <li>अपने खाते तक पहुंचने के लिए आपको अपना पासवर्ड सेट करना होगा</li>
                       <li>सुरक्षा के लिए, इस लिंक को किसी के साथ साझा न करें</li>
                     </ul>
                   </div>
                   <p>यदि बटन काम नहीं करता है, तो इस लिंक को अपने ब्राउज़र में कॉपी और पेस्ट करें:</p>
-                  <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 5px;">${resetUrl}</p>
+                  <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 5px;">${setupUrl}</p>
                 </div>
                 <div class="footer">
                   <p>© 2024 Prani Mitra. सभी अधिकार सुरक्षित।</p>
@@ -664,14 +648,14 @@ Team ${startupName}
           `
         },
         telugu: {
-          subject: 'మీ Prani Mitra పాస్‌వర్డ్‌ను రీసెట్ చేయండి',
+          subject: 'మీ Prani Mitra ఖాతా పాస్‌వర్డ్‌ను సెట్ చేయండి',
           html: `
             <!DOCTYPE html>
             <html>
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>పాస్‌వర్డ్ రీసెట్ - Prani Mitra</title>
+              <title>పాస్‌వర్డ్ సెట్ చేయండి - Prani Mitra</title>
               <style>
                 body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -680,6 +664,7 @@ Team ${startupName}
                 .button { display: inline-block; background: #4CAF50; color: white; padding: 15px 30px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
                 .button:hover { background: #45a049; }
                 .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
+                .info { background: #e3f2fd; border: 1px solid #bbdefb; padding: 15px; border-radius: 5px; margin: 20px 0; }
                 .warning { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
               </style>
             </head>
@@ -690,21 +675,29 @@ Team ${startupName}
                   <p>మీ స్మార్ట్ ఫార్మింగ్ కంపానియన్</p>
                 </div>
                 <div class="content">
-                  <h2>పాస్‌వర్డ్ రీసెట్ అభ్యర్థన</h2>
+                  <h2>Prani Mitraకు స్వాగతం!</h2>
                   <p>హలో ${name},</p>
-                  <p>మీ Prani Mitra ఖాతా కోసం పాస్‌వర్డ్‌ను రీసెట్ చేయమని మాకు అభ్యర్థన వచ్చింది.</p>
-                  <p>మీ పాస్‌వర్డ్‌ను రీసెట్ చేయడానికి క్రింది బటన్‌పై క్లిక్ చేయండి:</p>
-                  <a href="${resetUrl}" class="button">పాస్‌వర్డ్ రీసెట్ చేయండి</a>
+                  <p>${sentBy} చేత మీ Prani Mitra ఖాతా సృష్టించబడింది. మీ ఖాతా సెటప్ పూర్తి చేయడానికి, మీరు పాస్‌వర్డ్‌ను సృష్టించాలి.</p>
+                  <div class="info">
+                    <strong>📋 ఖాతా వివరాలు:</strong>
+                    <ul>
+                      <li>ఇమెయిల్: ${to}</li>
+                      <li>పాత్ర: ${sentBy === 'Admin' ? 'అడ్మిన్' : 'వినియోగదారు'}</li>
+                      <li>స్థితి: పాస్‌వర్డ్ సెటప్ పెండింగ్</li>
+                    </ul>
+                  </div>
+                  <p>మీ పాస్‌వర్డ్‌ను సెట్ చేయడానికి క్రింది బటన్‌పై క్లిక్ చేయండి:</p>
+                  <a href="${setupUrl}" class="button">పాస్‌వర్డ్ సెట్ చేయండి</a>
                   <div class="warning">
                     <strong>⚠️ ముఖ్యమైనది:</strong>
                     <ul>
-                      <li>ఈ లింక్ 1 గంటలో గడువు ముగుస్తుంది</li>
-                      <li>మీరు ఈ రీసెట్‌ను అభ్యర్థించకపోతే, దయచేసి ఈ ఇమెయిల్‌ను విస్మరించండి</li>
+                      <li>ఈ లింక్ 24 గంటలలో గడువు ముగుస్తుంది</li>
+                      <li>మీ ఖాతాకు ప్రాప్యత పొందడానికి మీరు మీ పాస్‌వర్డ్‌ను సెట్ చేయాలి</li>
                       <li>భద్రత కోసం, ఈ లింక్‌ను ఎవరితోనూ భాగస్వామ్యం చేయకండి</li>
                     </ul>
                   </div>
                   <p>బటన్ పని చేయకపోతే, ఈ లింక్‌ను మీ బ్రౌజర్‌లో కాపీ చేసి పేస్ట్ చేయండి:</p>
-                  <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 5px;">${resetUrl}</p>
+                  <p style="word-break: break-all; background: #eee; padding: 10px; border-radius: 5px;">${setupUrl}</p>
                 </div>
                 <div class="footer">
                   <p>© 2024 Prani Mitra. అన్ని హక్కులు ప్రత్యేకించబడ్డాయి.</p>
@@ -735,7 +728,7 @@ Team ${startupName}
       };
 
     } catch (error) {
-      console.error('Password reset email error:', error);
+      console.error('Password setup email error:', error);
       return {
         success: false,
         error: error.message
@@ -743,8 +736,8 @@ Team ${startupName}
     }
   }
 
-  // Send password reset confirmation email
-  async sendPasswordResetConfirmationEmail({ to, name, language = 'english', resetTime }) {
+  // Send password setup confirmation email
+  async sendPasswordSetupConfirmationEmail({ to, name, language = 'english', setupTime }) {
     try {
       if (!this.transporter) {
         throw new Error('Email transporter not initialized');
@@ -752,14 +745,14 @@ Team ${startupName}
 
       const templates = {
         english: {
-          subject: 'Password Reset Successful - Prani Mitra',
+          subject: 'Password Setup Complete - Prani Mitra',
           html: `
             <!DOCTYPE html>
             <html>
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>Password Reset Successful - Prani Mitra</title>
+              <title>Password Setup Complete - Prani Mitra</title>
               <style>
                 body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -776,14 +769,14 @@ Team ${startupName}
                   <p>Your Smart Farming Companion</p>
                 </div>
                 <div class="content">
-                  <h2>✅ Password Reset Successful</h2>
+                  <h2>✅ Password Setup Complete!</h2>
                   <p>Hello ${name},</p>
                   <div class="success">
-                    <strong>Your password has been successfully reset!</strong>
-                    <p>Reset completed at: ${resetTime.toLocaleString()}</p>
+                    <strong>Your password has been successfully set up!</strong>
+                    <p>Setup completed at: ${setupTime.toLocaleString()}</p>
                   </div>
-                  <p>You can now log in to your Prani Mitra account with your new password.</p>
-                  <p>If you did not make this change, please contact our support team immediately.</p>
+                  <p>Your Prani Mitra account is now fully activated. You can log in and start using all the features.</p>
+                  <p>Welcome to the Prani Mitra family!</p>
                 </div>
                 <div class="footer">
                   <p>© 2024 Prani Mitra. All rights reserved.</p>
@@ -795,14 +788,14 @@ Team ${startupName}
           `
         },
         hindi: {
-          subject: 'पासवर्ड रीसेट सफल - Prani Mitra',
+          subject: 'पासवर्ड सेटअप पूर्ण - Prani Mitra',
           html: `
             <!DOCTYPE html>
             <html>
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>पासवर्ड रीसेट सफल - Prani Mitra</title>
+              <title>पासवर्ड सेटअप पूर्ण - Prani Mitra</title>
               <style>
                 body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -819,14 +812,14 @@ Team ${startupName}
                   <p>आपका स्मार्ट फार्मिंग साथी</p>
                 </div>
                 <div class="content">
-                  <h2>✅ पासवर्ड रीसेट सफल</h2>
+                  <h2>✅ पासवर्ड सेटअप पूर्ण!</h2>
                   <p>नमस्ते ${name},</p>
                   <div class="success">
-                    <strong>आपका पासवर्ड सफलतापूर्वक रीसेट हो गया है!</strong>
-                    <p>रीसेट पूरा हुआ: ${resetTime.toLocaleString()}</p>
+                    <strong>आपका पासवर्ड सफलतापूर्वक सेट हो गया है!</strong>
+                    <p>रीसेट पूरा हुआ: ${setupTime.toLocaleString()}</p>
                   </div>
-                  <p>अब आप अपने नए पासवर्ड के साथ अपने Prani Mitra खाते में लॉग इन कर सकते हैं।</p>
-                  <p>यदि आपने यह परिवर्तन नहीं किया है, तो कृपया तुरंत हमारी सहायता टीम से संपर्क करें।</p>
+                  <p>आपका Prani Mitra खाता अब पूरी तरह सक्रिय है। आप लॉग इन कर सकते हैं और सभी सुविधाओं का उपयोग शुरू कर सकते हैं।</p>
+                  <p>Prani Mitra परिवार में आपका स्वागत है!</p>
                 </div>
                 <div class="footer">
                   <p>© 2024 Prani Mitra. सभी अधिकार सुरक्षित।</p>
@@ -838,14 +831,14 @@ Team ${startupName}
           `
         },
         telugu: {
-          subject: 'పాస్‌వర్డ్ రీసెట్ విజయవంతం - Prani Mitra',
+          subject: 'పాస్‌వర్డ్ సెటప్ పూర్తి - Prani Mitra',
           html: `
             <!DOCTYPE html>
             <html>
             <head>
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>పాస్‌వర్డ్ రీసెట్ విజయవంతం - Prani Mitra</title>
+              <title>పాస్‌వర్డ్ సెటప్ పూర్తి - Prani Mitra</title>
               <style>
                 body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
                 .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -862,14 +855,14 @@ Team ${startupName}
                   <p>మీ స్మార్ట్ ఫార్మింగ్ కంపానియన్</p>
                 </div>
                 <div class="content">
-                  <h2>✅ పాస్‌వర్డ్ రీసెట్ విజయవంతం</h2>
+                  <h2>✅ పాస్‌వర్డ్ సెటప్ పూర్తి!</h2>
                   <p>హలో ${name},</p>
                   <div class="success">
-                    <strong>మీ పాస్‌వర్డ్ విజయవంతంగా రీసెట్ చేయబడింది!</strong>
-                    <p>రీసెట్ పూర్తయింది: ${resetTime.toLocaleString()}</p>
+                    <strong>మీ పాస్‌వర్డ్ విజయవంతంగా సెట్ చేయబడింది!</strong>
+                    <p>రీసెట్ పూర్తయింది: ${setupTime.toLocaleString()}</p>
                   </div>
-                  <p>ఇప్పుడు మీరు మీ కొత్త పాస్‌వర్డ్‌తో మీ Prani Mitra ఖాతాలోకి లాగిన్ చేయవచ్చు.</p>
-                  <p>మీరు ఈ మార్పును చేయకపోతే, దయచేసి వెంటనే మా మద్దతు బృందాన్ని సంప్రదించండి.</p>
+                  <p>మీ Prani Mitra ఖాతా ఇప్పుడు పూర్తిగా సక్రియం. మీరు లాగిన్ చేయవచ్చు మరియు అన్ని లక్షణాలను ఉపయోగించడం ప్రారంభించవచ్చు.</p>
+                  <p>Prani Mitra కుటుంబంలోకి స్వాగతం!</p>
                 </div>
                 <div class="footer">
                   <p>© 2024 Prani Mitra. అన్ని హక్కులు ప్రత్యేకించబడ్డాయి.</p>
@@ -900,7 +893,7 @@ Team ${startupName}
       };
 
     } catch (error) {
-      console.error('Password reset confirmation email error:', error);
+      console.error('Password setup confirmation email error:', error);
       return {
         success: false,
         error: error.message
