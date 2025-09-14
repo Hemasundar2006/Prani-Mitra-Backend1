@@ -113,6 +113,15 @@ const userSchema = new mongoose.Schema({
       default: 'Asia/Kolkata'
     }
   },
+  // Password reset fields (NEW)
+  passwordReset: {
+    token: String,
+    expires: Date,
+    used: {
+      type: Boolean,
+      default: false
+    }
+  },
   isActive: {
     type: Boolean,
     default: true
@@ -174,6 +183,36 @@ userSchema.methods.resetMonthlyUsage = function() {
   }
   
   return false;
+};
+
+// Method to generate password reset token
+userSchema.methods.generatePasswordResetToken = function() {
+  const crypto = require('crypto');
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  
+  // Hash the token and set expiry (1 hour)
+  this.passwordReset.token = crypto.createHash('sha256').update(resetToken).digest('hex');
+  this.passwordReset.expires = Date.now() + 60 * 60 * 1000; // 1 hour
+  this.passwordReset.used = false;
+  
+  return resetToken;
+};
+
+// Method to check if password reset token is valid
+userSchema.methods.isPasswordResetTokenValid = function(token) {
+  const crypto = require('crypto');
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  
+  return this.passwordReset.token === hashedToken &&
+         this.passwordReset.expires > Date.now() &&
+         !this.passwordReset.used;
+};
+
+// Method to clear password reset token
+userSchema.methods.clearPasswordResetToken = function() {
+  this.passwordReset.token = undefined;
+  this.passwordReset.expires = undefined;
+  this.passwordReset.used = true;
 };
 
 // Method to compare password
