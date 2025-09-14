@@ -1417,10 +1417,6 @@ router.get('/users', authenticateToken, requireAdminOrSupport, [
     .optional()
     .isIn(['farmer', 'admin', 'support'])
     .withMessage('Role must be farmer, admin, or support'),
-  query('subscription')
-    .optional()
-    .isIn(['free', 'active', 'expired', 'cancelled'])
-    .withMessage('Invalid subscription status'),
   query('search')
     .optional()
     .isLength({ min: 1, max: 100 })
@@ -1440,7 +1436,6 @@ router.get('/users', authenticateToken, requireAdminOrSupport, [
       limit = 20,
       status,
       role,
-      subscription,
       search,
       sortBy = 'createdAt',
       sortOrder = 'desc'
@@ -1457,11 +1452,6 @@ router.get('/users', authenticateToken, requireAdminOrSupport, [
     // Add status filter
     if (status) {
       filter.isActive = status === 'active';
-    }
-
-    // Add subscription filter
-    if (subscription) {
-      filter.subscriptionStatus = subscription;
     }
 
     // Add search filter
@@ -1496,7 +1486,7 @@ router.get('/users', authenticateToken, requireAdminOrSupport, [
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
 
-    // Format response
+    // Format response - only include fields that exist in the User model
     const formattedUsers = users.map(user => ({
       id: user._id,
       name: user.name,
@@ -1504,12 +1494,10 @@ router.get('/users', authenticateToken, requireAdminOrSupport, [
       phoneNumber: user.phoneNumber,
       role: user.role,
       isActive: user.isActive,
-      subscriptionStatus: user.subscriptionStatus,
       location: user.location,
       profilePicture: user.profilePicture,
       createdAt: user.createdAt,
       lastLogin: user.lastLogin,
-      verificationStatus: user.verificationStatus,
       isVerified: user.isVerified
     }));
 
