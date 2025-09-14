@@ -113,8 +113,17 @@ const userSchema = new mongoose.Schema({
       default: 'Asia/Kolkata'
     }
   },
-  // Password reset fields (NEW)
+  // Password reset fields
   passwordReset: {
+    token: String,
+    expires: Date,
+    used: {
+      type: Boolean,
+      default: false
+    }
+  },
+  // Password setup fields (NEW)
+  passwordSetup: {
     token: String,
     expires: Date,
     used: {
@@ -213,6 +222,36 @@ userSchema.methods.clearPasswordResetToken = function() {
   this.passwordReset.token = undefined;
   this.passwordReset.expires = undefined;
   this.passwordReset.used = true;
+};
+
+// Method to generate password setup token
+userSchema.methods.generatePasswordSetupToken = function() {
+  const crypto = require('crypto');
+  const setupToken = crypto.randomBytes(32).toString('hex');
+  
+  // Hash the token and set expiry (24 hours for setup)
+  this.passwordSetup.token = crypto.createHash('sha256').update(setupToken).digest('hex');
+  this.passwordSetup.expires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  this.passwordSetup.used = false;
+  
+  return setupToken;
+};
+
+// Method to check if password setup token is valid
+userSchema.methods.isPasswordSetupTokenValid = function(token) {
+  const crypto = require('crypto');
+  const hashedToken = crypto.createHash('sha256').update(token).digest('hex');
+  
+  return this.passwordSetup.token === hashedToken &&
+         this.passwordSetup.expires > Date.now() &&
+         !this.passwordSetup.used;
+};
+
+// Method to clear password setup token
+userSchema.methods.clearPasswordSetupToken = function() {
+  this.passwordSetup.token = undefined;
+  this.passwordSetup.expires = undefined;
+  this.passwordSetup.used = true;
 };
 
 // Method to compare password

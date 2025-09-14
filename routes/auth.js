@@ -1028,4 +1028,289 @@ router.post('/reset-password', [
   }
 });
 
+// @route   POST /api/auth/create-password
+// @desc    Create new password using setup token
+// @access  Public
+router.post('/create-password', [
+  body('token')
+    .notEmpty()
+    .withMessage('Setup token is required'),
+  body('email')
+    .isEmail()
+    .withMessage('Valid email address is required')
+    .normalizeEmail(),
+  body('password')
+    .isLength({ min: 6, max: 128 })
+    .withMessage('Password must be between 6 and 128 characters')
+    .matches(/^(?=.*[a-zA-Z])(?=.*\d)/)
+    .withMessage('Password must contain at least one letter and one number'),
+  body('confirmPassword')
+    .notEmpty()
+    .withMessage('Please confirm your password')
+    .custom((value, { req }) => {
+      if (value !== req.body.password) {
+        throw new Error('Passwords do not match');
+      }
+      return true;
+    })
+], handleValidationErrors, async (req, res) => {
+  try {
+    const { token, email, password, confirmPassword } = req.body;
+
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid setup link',
+        code: 'INVALID_SETUP_LINK'
+      });
+    }
+
+    // Check if user already has a password set
+    if (user.password && user.password.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password is already set for this account',
+        code: 'PASSWORD_ALREADY_SET'
+      });
+    }
+
+    // Check if setup token is valid
+    if (!user.isPasswordSetupTokenValid(token)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Setup link is invalid or has expired',
+        code: 'INVALID_OR_EXPIRED_SETUP_TOKEN'
+      });
+    }
+
+    // Set the new password
+    user.password = password;
+    user.clearPasswordSetupToken();
+    user.isVerified = true; // Mark as verified after password setup
+    user.lastLogin = new Date();
+    
+    await user.save();
+
+    // Generate JWT token
+    const newToken = generateToken(user._id);
+
+    // Send password setup confirmation email
+    try {
+      await emailService.sendPasswordSetupConfirmationEmail({
+        to: user.email,
+        name: user.name,
+        language: user.preferredLanguage || 'english',
+        setupTime: new Date()
+      });
+    } catch (emailError) {
+      console.error('Password setup confirmation email error:', emailError);
+      // Don't fail the request if email fails
+    }
+
+    console.log(`✅ Password setup successful for: ${user.email}`);
+
+    // Prepare response data (exclude password)
+    const responseUser = {
+      id: user._id,
+      phoneNumber: user.phoneNumber,
+      name: user.name,
+      email: user.email,
+      preferredLanguage: user.preferredLanguage,
+      location: user.location,
+      farmingType: user.farmingType,
+      subscription: user.subscription,
+      usage: user.usage,
+      role: user.role,
+      isVerified: user.isVerified,
+      lastLogin: user.lastLogin,
+      createdAt: user.createdAt
+    };
+
+    res.status(200).json({
+      success: true,
+      message: 'Password has been set successfully',
+      data: {
+        user: responseUser,
+        token: newToken,
+        tokenType: 'Bearer'
+      }
+    });
+
+  } catch (error) {
+    console.error('Create password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to set password',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   POST /api/auth/verify-create-password-token
+// @desc    Verify password setup token
+// @access  Public
+router.post('/verify-create-password-token', [
+  body('token')
+    .notEmpty()
+    .withMessage('Setup token is required'),
+  body('email')
+    .isEmail()
+    .withMessage('Valid email address is required')
+    .normalizeEmail()
+], handleValidationErrors, async (req, res) => {
+  try {
+    const { token, email } = req.body;
+
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid setup link',
+        code: 'INVALID_SETUP_LINK'
+      });
+    }
+
+    // Check if user already has a password set
+    if (user.password && user.password.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Password is already set for this account',
+        code: 'PASSWORD_ALREADY_SET'
+      });
+    }
+
+    // Check if setup token is valid
+    if (!user.isPasswordSetupTokenValid(token)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Setup link is invalid or has expired',
+        code: 'INVALID_OR_EXPIRED_SETUP_TOKEN'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Setup token is valid',
+      data: {
+        email: email,
+        valid: true,
+        user: {
+          name: user.name,
+          email: user.email,
+          role: user.role
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Verify setup token error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify setup token',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// @route   POST /api/auth/send-setup-link
+// @desc    Send password setup link (Admin only)
+// @access  Private/Admin
+router.post('/send-setup-link', authenticateToken, requireAdmin, [
+  body('email')
+    .isEmail()
+    .withMessage('Valid email address is required')
+    .normalizeEmail()
+], handleValidationErrors, async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase() });
+    
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found with this email address',
+        code: 'USER_NOT_FOUND'
+      });
+    }
+
+    // Check if user already has a password set
+    if (user.password && user.password.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'User already has a password set',
+        code: 'PASSWORD_ALREADY_SET'
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: 'User account is deactivated',
+        code: 'ACCOUNT_DEACTIVATED'
+      });
+    }
+
+    // Generate password setup token
+    const setupToken = user.generatePasswordSetupToken();
+    await user.save();
+
+    // Create setup URL
+    const setupUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/setup-password?token=${setupToken}&email=${encodeURIComponent(email)}`;
+
+    // Send password setup email
+    try {
+      const emailResult = await emailService.sendPasswordSetupEmail({
+        to: user.email,
+        name: user.name,
+        setupUrl: setupUrl,
+        language: user.preferredLanguage || 'english',
+        sentBy: req.user.name
+      });
+
+      if (emailResult.success) {
+        console.log(`✅ Password setup email sent to: ${user.email} by admin: ${req.user.name}`);
+        
+        res.status(200).json({
+          success: true,
+          message: 'Password setup link has been sent to the user.',
+          data: {
+            email: email,
+            setupSent: true,
+            messageId: emailResult.messageId
+          }
+        });
+      } else {
+        throw new Error('Failed to send email');
+      }
+    } catch (emailError) {
+      console.error('Password setup email error:', emailError);
+      
+      // Clear the setup token if email failed
+      user.clearPasswordSetupToken();
+      await user.save();
+      
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send password setup email. Please try again.',
+        code: 'EMAIL_SEND_FAILED'
+      });
+    }
+
+  } catch (error) {
+    console.error('Send setup link error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send setup link',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 module.exports = router;
