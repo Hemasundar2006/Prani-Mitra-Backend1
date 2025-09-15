@@ -6,6 +6,61 @@ class EmailService {
     this.initializeTransporter();
   }
 
+  // Send contact form email to admin
+  async sendContactFormEmail({ to, fromEmail, name, phone, category, subject, message }) {
+    try {
+      if (!this.transporter) {
+        throw new Error('Email transporter not initialized');
+      }
+
+      const safe = (v) => (typeof v === 'string' ? v.replace(/</g, '&lt;').replace(/>/g, '&gt;') : v);
+
+      const mailOptions = {
+        from: fromEmail ? `${safe(name)} <${fromEmail}>` : (process.env.EMAIL_USER || 'noreply@pranimitra.com'),
+        to: to,
+        subject: `[Contact] ${subject || 'New message from contact form'}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 16px;">
+            <h2 style="margin: 0 0 12px;">📩 New Contact Message</h2>
+            <p style="margin: 0 0 16px; color: #555;">You received a new message from the contact page.</p>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tr>
+                <td style="width: 160px; padding: 8px; background: #f6f6f6;">Name</td>
+                <td style="padding: 8px;">${safe(name)}</td>
+              </tr>
+              <tr>
+                <td style="width: 160px; padding: 8px; background: #f6f6f6;">Email</td>
+                <td style="padding: 8px;">${safe(fromEmail || '-')}</td>
+              </tr>
+              <tr>
+                <td style="width: 160px; padding: 8px; background: #f6f6f6;">Phone</td>
+                <td style="padding: 8px;">${safe(phone || '-')}</td>
+              </tr>
+              <tr>
+                <td style="width: 160px; padding: 8px; background: #f6f6f6;">Category</td>
+                <td style="padding: 8px;">${safe(category || 'General Inquiry')}</td>
+              </tr>
+              <tr>
+                <td style="width: 160px; padding: 8px; background: #f6f6f6;">Subject</td>
+                <td style="padding: 8px;">${safe(subject || 'New Contact Message')}</td>
+              </tr>
+            </table>
+            <div style="margin-top: 16px; padding: 12px; border: 1px solid #eee; border-radius: 6px; background: #fafafa; white-space: pre-wrap;">
+              ${safe(message)}
+            </div>
+            <p style="margin-top: 16px; color: #999; font-size: 12px;">Sent at ${new Date().toLocaleString()}</p>
+          </div>
+        `
+      };
+
+      const result = await this.transporter.sendMail(mailOptions);
+      return { success: true, messageId: result.messageId };
+    } catch (error) {
+      console.error('sendContactFormEmail error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
   initializeTransporter() {
     try {
       // Prefer configured SMTP (e.g., Gmail) whenever credentials are present
