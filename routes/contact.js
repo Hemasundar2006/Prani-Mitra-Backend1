@@ -35,7 +35,11 @@ router.post('/', [
     .withMessage('Phone must be 7-20 characters (digits and + - ( ) space)'),
   body('category')
     .optional({ checkFalsy: true })
-    .isIn(['General Inquiry', 'Technical Support', 'Billing & Plans', 'Feedback', 'Partnership'])
+    .custom((value) => {
+      const allowed = ['General Inquiry', 'Technical Support', 'Billing & Plans', 'Feedback', 'Partnership'];
+      const aliases = ['Support', 'Billing', 'General'];
+      return allowed.includes(value) || aliases.includes(value);
+    })
     .withMessage('Invalid category'),
   body('subject')
     .optional({ checkFalsy: true })
@@ -48,6 +52,12 @@ router.post('/', [
 ], handleValidationErrors, async (req, res) => {
   try {
     const { name, email, phone, category, subject, message } = req.body;
+
+    // Normalize category aliases from UI to backend canonical values
+    let normalizedCategory = category || 'General Inquiry';
+    if (normalizedCategory === 'Support') normalizedCategory = 'Technical Support';
+    if (normalizedCategory === 'Billing') normalizedCategory = 'Billing & Plans';
+    if (normalizedCategory === 'General') normalizedCategory = 'General Inquiry';
 
     const toEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER;
     if (!toEmail) {
@@ -62,7 +72,7 @@ router.post('/', [
       fromEmail: email,
       name,
       phone,
-      category: category || 'General Inquiry',
+      category: normalizedCategory,
       subject: subject || 'New Contact Message',
       message
     });
