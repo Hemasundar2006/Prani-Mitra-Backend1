@@ -75,6 +75,19 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  // 0: pending, 1: approved, 2: rejected
+  approvalStatus: {
+    type: Number,
+    enum: [0, 1, 2],
+    default: 0
+  },
+  approval: {
+    approvedAt: Date,
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    rejectedAt: Date,
+    rejectedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    rejectionReason: { type: String, trim: true, maxlength: 500 }
+  },
   role: {
     type: String,
     enum: ['farmer', 'admin', 'support'],
@@ -183,6 +196,7 @@ const userSchema = new mongoose.Schema({
 userSchema.index({ phoneNumber: 1 });
 userSchema.index({ 'subscription.status': 1 });
 userSchema.index({ createdAt: -1 });
+userSchema.index({ approvalStatus: 1 });
 
 // Add verification status index
 userSchema.index({ 'verification.status': 1 });

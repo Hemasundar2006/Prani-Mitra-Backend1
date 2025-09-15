@@ -307,7 +307,8 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
       location: location || {},
       farmingType: farmingTypes || [], // Map farmingTypes to farmingType for database
       role: userRole, // Set the role
-      isVerified: true,
+      isVerified: userRole === 'admin',
+      approvalStatus: userRole === 'admin' ? 1 : 0,
       lastLogin: new Date()
     };
 

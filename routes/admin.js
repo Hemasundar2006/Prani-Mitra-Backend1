@@ -23,6 +23,115 @@ const handleValidationErrors = (req, res, next) => {
   next();
 };
 
+// @route   GET /api/admin/farmers/pending
+// @desc    List farmers with pending/rejected/approved status (filter by approvalStatus)
+// @access  Private/Admin
+router.get('/farmers/pending', authenticateToken, requireAdminOrSupport, async (req, res) => {
+  try {
+    const { status = '0', page = 1, limit = 20, search } = req.query;
+
+    const filter = { role: 'farmer' };
+    if (['0', '1', '2'].includes(String(status))) {
+      filter.approvalStatus = parseInt(status, 10);
+    }
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phoneNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [users, total] = await Promise.all([
+      User.find(filter)
+        .select('-password -__v')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      User.countDocuments(filter)
+    ]);
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        users,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages: Math.ceil(total / parseInt(limit)),
+          total
+        }
+      }
+    });
+  } catch (error) {
+    console.error('List pending farmers error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch farmers' });
+  }
+});
+
+// @route   PUT /api/admin/farmers/:userId/approve-status
+// @desc    Update farmer approval status using 0,1,2 (0=pending,1=approved,2=rejected)
+// @access  Private/Admin
+router.put('/farmers/:userId/approve-status', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { status, reason } = req.body; // status expected 0/1/2
+
+    if (![0, 1, 2].includes(Number(status))) {
+      return res.status(400).json({ success: false, message: 'Invalid status. Use 0,1,2' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    if (user.role !== 'farmer') {
+      return res.status(400).json({ success: false, message: 'Only farmer accounts can be approved/rejected' });
+    }
+
+    user.approvalStatus = Number(status);
+    if (status === 1) {
+      user.isVerified = true;
+      user.isActive = true;
+      user.approval.approvedAt = new Date();
+      user.approval.approvedBy = req.userId;
+      user.approval.rejectionReason = undefined;
+      user.approval.rejectedAt = undefined;
+      user.approval.rejectedBy = undefined;
+    } else if (status === 2) {
+      user.isVerified = false;
+      user.isActive = false;
+      user.approval.rejectedAt = new Date();
+      user.approval.rejectedBy = req.userId;
+      user.approval.rejectionReason = reason;
+    } else {
+      // pending
+      user.isVerified = false;
+      user.approval.approvedAt = undefined;
+      user.approval.approvedBy = undefined;
+      user.approval.rejectedAt = undefined;
+      user.approval.rejectedBy = undefined;
+      user.approval.rejectionReason = undefined;
+    }
+
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Approval status updated',
+      data: {
+        userId: user._id,
+        approvalStatus: user.approvalStatus,
+        isVerified: user.isVerified
+      }
+    });
+  } catch (error) {
+    console.error('Update approval status error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update approval status' });
+  }
+});
+
 // @route   GET /api/admin/dashboard
 // @desc    Get admin dashboard statistics
 // @access  Private/Admin
