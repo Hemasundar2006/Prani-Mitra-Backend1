@@ -168,14 +168,14 @@ class EmailService {
   // Send welcome email
   async sendWelcomeEmail(userData) {
     try {
-      const { name, email, phoneNumber, preferredLanguage = 'english' } = userData;
+      const { name, email, phoneNumber, preferredLanguage = 'english', role = 'farmer' } = userData;
 
       if (!email) {
         console.log('No email provided for welcome email');
         return { success: false, message: 'No email address provided' };
       }
 
-      const emailContent = this.generateWelcomeEmailContent(name, preferredLanguage);
+      const emailContent = this.generateWelcomeEmailContent(name, preferredLanguage, role);
 
       // Optional inline banner image (CID) if a local path is provided
       const attachments = [];
@@ -218,14 +218,45 @@ class EmailService {
     }
   }
 
-  // Generate welcome email content
-  generateWelcomeEmailContent(name, language = 'english') {
+  // Generate welcome email content (role-aware)
+  generateWelcomeEmailContent(name, language = 'english', role = 'farmer') {
     const startupName = process.env.STARTUP_NAME || 'Prani Mitra';
     const tollFree = process.env.TOLL_FREE_NUMBER || '04041893203';
     const website = process.env.WEBSITE_URL || process.env.FRONTEND_URL || 'https://prani-mitra1.vercel.app';
     const bannerHTML = process.env.WELCOME_BANNER_PATH
       ? '<img src="cid:welcomeBanner" alt="Welcome banner" style="width:100%;max-width:100%;display:block;border-radius:8px;margin-bottom:16px;" />'
       : '';
+
+    // Admin professional template (English)
+    if (role === 'admin') {
+      return {
+        subject: `👋 Welcome to ${startupName} Admin Portal`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; padding: 24px; background: #ffffff;">
+            ${bannerHTML}
+            <h2 style="margin: 0 0 16px; color: #1e3a8a;">Welcome ${name},</h2>
+            <p style="color: #444; line-height: 1.7; margin: 0 0 16px;">
+              Your <strong>administrator account</strong> for <strong>${startupName}</strong> has been created successfully.
+            </p>
+            <h3 style="color: #1e3a8a; margin: 24px 0 12px;">Your access includes:</h3>
+            <ul style="color: #444; line-height: 1.8; margin: 8px 0 16px; padding-left: 20px;">
+              <li>📊 Dashboard analytics</li>
+              <li>👥 User management</li>
+              <li>🎟 Voucher and plan operations</li>
+              <li>🧾 Exports and reports</li>
+            </ul>
+            <p style="color: #444; line-height: 1.7; margin: 16px 0;">
+              For security, please do not share your credentials. If you need help, contact the core team.
+            </p>
+            <p style="color: #1e3a8a; font-weight: bold; margin: 24px 0 8px;">Regards,</p>
+            <p style="color: #444; margin: 0 0 4px;">${startupName} Platform</p>
+            <p style="color: #444; margin: 0 0 4px;">📞 Support: ${tollFree}</p>
+            <p style="color: #444; margin: 0;">🌐 Admin: <a href="${website}/admin-dashboard" style="color: #1e3a8a; text-decoration: none;">${website}/admin-dashboard</a></p>
+          </div>
+        `,
+        text: `Welcome ${name},\n\nYour administrator account for ${startupName} has been created successfully.\n\nAccess includes: dashboard analytics, user management, vouchers/plans, and exports. For security, do not share your credentials.\n\nRegards,\n${startupName} Platform\nSupport: ${tollFree}\nAdmin: ${website}/admin-dashboard`
+      };
+    }
 
     const templates = {
       english: {
@@ -247,7 +278,6 @@ class EmailService {
             <ul style="color: #444; line-height: 1.8; margin: 8px 0 16px; padding-left: 20px;">
               <li>🌱 Crop Care advice</li>
               <li>🐄 Livestock help</li>
-              <li>☀️ Weather updates</li>
               <li>🏛 Government schemes</li>
             </ul>
 
@@ -276,7 +306,6 @@ How it works:
 3) Choose a service:
    - 🌱 Crop Care advice
    - 🐄 Livestock help
-   - ☀️ Weather updates
    - 🏛 Government schemes
 
 No internet needed. Just call and get instant answers from our AI-powered assistant, available 24/7.

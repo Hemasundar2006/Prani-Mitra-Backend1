@@ -333,7 +333,8 @@ router.post('/register', registerRateLimit, validateRegistration, handleValidati
         name: user.name,
         email: user.email,
         phoneNumber: user.phoneNumber,
-        preferredLanguage: user.preferredLanguage
+        preferredLanguage: user.preferredLanguage,
+        role: user.role
       }).then(result => {
         // Email sent
       }).catch(error => {
