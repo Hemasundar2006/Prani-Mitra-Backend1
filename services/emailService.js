@@ -122,7 +122,7 @@ class EmailService {
   }
 
   // Test email functionality
-  async testEmail(toEmail = 'test@example.com') {
+  async testEmail(toEmail = 'marothihemasundar03@gmail.com') {
     try {
       if (!this.transporter) {
         return {

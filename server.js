@@ -20,12 +20,13 @@ app.use(cors({
     'http://127.0.0.1:3001',
     'https://prani-mitra1.vercel.app', // production frontend (Vercel)
     'https://prani-mitra1-6y9uifsit-hemasundar2006s-projects.vercel.app', // Vercel preview URL
+    'https://prani-mitra-demo2.vercel.app', // New demo frontend
     process.env.FRONTEND_URL           // additional production frontend from env
   ].filter(Boolean), // Remove any undefined values
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
-    'Content-Type', 
-    'Authorization', 
+    'Content-Type',
+    'Authorization',
     'X-Requested-With',
     'Accept',
     'Origin'
@@ -56,8 +57,8 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/prani-mit
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('MongoDB connected successfully'))
-.catch(err => console.error('MongoDB connection error:', err));
+  .then(() => console.log('MongoDB connected successfully'))
+  .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));

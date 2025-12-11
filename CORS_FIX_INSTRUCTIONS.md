@@ -4,6 +4,7 @@
 
 The backend has been updated to accept requests from your Vercel frontend:
 - `https://prani-mitra1.vercel.app` ✅
+- `https://prani-mitra-demo2.vercel.app` ✅
 
 ## 🚀 **Deployment Steps**
 
@@ -27,7 +28,7 @@ After updating environment variables:
 
 After deployment, test with:
 ```bash
-curl -H "Origin: https://prani-mitra1.vercel.app" \
+curl -H "Origin: https://prani-mitra-demo2.vercel.app" \
      -H "Access-Control-Request-Method: POST" \
      -H "Access-Control-Request-Headers: Content-Type" \
      -X OPTIONS \
@@ -47,6 +48,8 @@ app.use(cors({
     'http://127.0.0.1:3000',
     'http://127.0.0.1:3001',
     'https://prani-mitra1.vercel.app', // ✅ YOUR FRONTEND URL
+    'https://prani-mitra1-6y9uifsit-hemasundar2006s-projects.vercel.app',
+    'https://prani-mitra-demo2.vercel.app', // ✅ NEW DEMO URL
     process.env.FRONTEND_URL           // additional production frontend from env
   ].filter(Boolean),
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -63,7 +66,7 @@ app.use(cors({
 
 ## 🎯 **Expected Results**
 
-After deployment, your frontend at `https://prani-mitra1.vercel.app` should be able to:
+After deployment, your frontend at `https://prani-mitra-demo2.vercel.app` should be able to:
 - ✅ Make API calls to `https://prani-mitra-backend1.onrender.com/api/*`
 - ✅ Register new users
 - ✅ Login users
