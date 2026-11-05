@@ -46,7 +46,7 @@ async function reply({ transcript, history, language, service }) {
 }
 
 async function speak({ text, language }) {
-  const response = await fetch(process.env.GNANI_TTS_URL || 'https://api.vachana.ai/api/v1/tts/inference', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key-ID': requireConfig('GNANI_API_KEY') }, body: JSON.stringify({ text, model: process.env.GNANI_TTS_MODEL || 'timbre-v2.5', voice: process.env.GNANI_TTS_VOICE || 'Kaveri', language: { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN' }[language], audio_config: { encoding: 'linear_pcm', container: 'wav', num_channels: 1, sample_rate: 48000, sample_width: 2 } }) });
+  const response = await fetch(process.env.GNANI_TTS_URL || 'https://api.vachana.ai/api/v1/tts/inference', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key-ID': requireConfig('GNANI_API_KEY') }, body: JSON.stringify({ text, model: process.env.GNANI_TTS_MODEL || 'timbre-v2.5', voice: process.env.GNANI_TTS_VOICE || 'Kaveri', language: { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN' }[language], audio_config: { encoding: 'linear_pcm', container: 'raw', num_channels: 1, sample_rate: 16000, sample_width: 2 } }) });
   if (!response.ok) { let error; try { error = await response.json(); } catch (_) {} throw Object.assign(new Error(error?.message || error?.detail?.message || 'Gnani TTS request failed'), { status: 502 }); }
   const audio = Buffer.from(await response.arrayBuffer()).toString('base64');
   console.info('Gnani TTS succeeded:', { bytes: Buffer.byteLength(audio, 'base64'), language });
