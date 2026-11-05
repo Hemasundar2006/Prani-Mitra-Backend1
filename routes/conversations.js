@@ -3,14 +3,18 @@ const Conversation = require('../models/Conversation');
 const { authenticateToken } = require('../middleware/auth');
 const router = express.Router();
 const languages = ['english', 'hindi', 'telugu'];
-const services = ['crop_advice', 'animal_health', 'weather', 'government_schemes', 'market_prices', 'general'];
+const services = ['farming', 'crop_advice', 'animal_health', 'weather', 'government_schemes', 'market_prices', 'general'];
+const normalizeLanguage = value => ({ English: 'english', Hindi: 'hindi', Telugu: 'telugu' }[value] || value);
+const normalizeService = value => ({ Farming: 'farming' }[value] || value);
 
 router.use(authenticateToken);
 router.post('/', async (req, res, next) => {
   try {
-    const { service, language, messages = [], summary, duration, audioMetadata, saved = false, bookmarked = false } = req.body;
+    const { messages = [], summary, duration, audioMetadata, saved = false, bookmarked = false } = req.body;
+    const service = normalizeService(req.body.service);
+    const language = normalizeLanguage(req.body.language);
     if (!services.includes(service) || !languages.includes(language) || !Array.isArray(messages) || messages.length > 20) return res.status(400).json({ success: false, message: 'Invalid conversation data' });
-    const cleanMessages = messages.map(m => ({ userTranscript: String(m.userTranscript || '').slice(0, 4000), assistantResponse: String(m.assistantResponse || '').slice(0, 8000), audioMetadata: m.audioMetadata }));
+    const cleanMessages = messages.map(m => ({ role: m.role, text: String(m.text ?? m.content ?? '').slice(0, 8000), audioMetadata: m.audioMetadata })).filter(m => ['user', 'assistant'].includes(m.role) && m.text);
     const conversation = await Conversation.create({ userId: req.userId, service, language, messages: cleanMessages, summary: summary ? String(summary).slice(0, 4000) : undefined, duration, audioMetadata, saved: Boolean(saved), bookmarked: Boolean(bookmarked) });
     res.status(201).json({ success: true, data: { conversation } });
   } catch (e) { next(e); }
