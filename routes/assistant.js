@@ -7,7 +7,19 @@ const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 }, fileFilter: (req,
 const languages = ['english', 'hindi', 'telugu'];
 const services = ['farming', 'crop_advice', 'animal_health', 'weather', 'government_schemes', 'market_prices', 'general'];
 const normalizeLanguage = value => ({ English: 'english', Hindi: 'hindi', Telugu: 'telugu', english: 'english', hindi: 'hindi', telugu: 'telugu' }[value] || value);
-const normalizeService = value => ({ Farming: 'farming' }[value] || value);
+const normalizeService = value => ({
+  Farming: 'farming',
+  'Crop Advice': 'crop_advice',
+  'Animal Health': 'animal_health',
+  Weather: 'weather',
+  'Government Schemes': 'government_schemes',
+  'Market Prices': 'market_prices',
+  farming: 'farming',
+  'crop-advice': 'crop_advice',
+  'animal-health': 'animal_health',
+  'government-schemes': 'government_schemes',
+  'market-prices': 'market_prices'
+}[value] || value);
 const normalizeMessages = messages => (Array.isArray(messages) ? messages : []).slice(-20).filter(m => m && ['user', 'assistant'].includes(m.role)).map(m => ({ role: m.role, text: String(m.content ?? m.text ?? '').slice(0, 8000) })).filter(m => m.text);
 const bad = (res, message) => res.status(400).json({ success: false, message });
 const validate = (body, requireTranscript = false) => {

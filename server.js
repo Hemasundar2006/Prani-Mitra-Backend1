@@ -4,6 +4,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const http = require('http');
 require('dotenv').config();
 
 const app = express();
@@ -116,7 +117,9 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const server = http.createServer(app);
+require('./services/assistantWebSocket').attachAssistantWebSocket(server);
+server.listen(PORT, () => {
   console.log(`🚀 Prani Mitra Backend server running on port ${PORT}`);
   console.log(`📱 Environment: ${process.env.NODE_ENV || 'production'}`);
 });
