@@ -18,7 +18,8 @@ async function postJson(url, body, headers = {}) {
 async function transcribe({ audio, mimeType, language }) {
   const apiKey = requireConfig('GNANI_API_KEY');
   const form = new FormData();
-  form.append('audio_file', new Blob([Buffer.from(audio, 'base64')], { type: mimeType }), 'recording');
+  const extension = ({ 'audio/wav': 'wav', 'audio/x-wav': 'wav', 'audio/m4a': 'm4a', 'audio/mp4': 'm4a', 'audio/mpeg': 'mp3', 'audio/ogg': 'ogg', 'audio/webm': 'ogg', 'audio/flac': 'flac', 'audio/aac': 'aac' }[mimeType] || 'wav');
+  form.append('audio_file', new Blob([Buffer.from(audio, 'base64')], { type: mimeType }), `recording.${extension}`);
   form.append('language_code', { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN' }[language]);
   form.append('model', process.env.GNANI_STT_MODEL || 'prisma-v2.5');
   const response = await fetch(process.env.GNANI_STT_URL || 'https://api.vachana.ai/stt/v3', { method: 'POST', headers: { 'X-API-Key-ID': apiKey }, body: form });

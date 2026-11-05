@@ -8,6 +8,10 @@ require('dotenv').config();
 
 const app = express();
 
+// Render and other reverse proxies forward the client IP in X-Forwarded-For.
+// Trust the first proxy hop so express-rate-limit can identify clients correctly.
+app.set('trust proxy', 1);
+
 // Security middleware
 app.use(helmet());
 
