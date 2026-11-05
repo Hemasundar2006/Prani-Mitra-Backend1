@@ -6,6 +6,24 @@ const router = express.Router();
 const emailService = require('../services/emailService');
 const crypto = require('crypto');
 
+router.post('/msg91/verify', async (req, res) => {
+  try {
+    const { accessToken, phoneNumber, name, preferredLanguage = 'english' } = req.body;
+    if (!accessToken || typeof accessToken !== 'string') return res.status(400).json({ success: false, message: 'MSG91 access token is required' });
+    if (!process.env.MSG91_AUTHKEY) return res.status(503).json({ success: false, message: 'MSG91 authentication is not configured' });
+    const response = await fetch('https://control.msg91.com/api/v5/widget/verifyAccessToken', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ authkey: process.env.MSG91_AUTHKEY, 'access-token': accessToken }) });
+    const result = await response.json();
+    if (!response.ok || result.type === 'error' || result.success === false) return res.status(401).json({ success: false, message: 'MSG91 token verification failed' });
+    const phone = String(phoneNumber || result.mobile || result.phone || '').replace(/\D/g, '');
+    if (!/^[6-9]\d{9}$/.test(phone)) return res.status(400).json({ success: false, message: 'A valid phone number is required' });
+    let user = await User.findOne({ phoneNumber: phone });
+    if (!user) user = await User.create({ phoneNumber: phone, name: String(name || `Farmer ${phone.slice(-4)}`).slice(0, 100), password: crypto.randomBytes(32).toString('hex'), preferredLanguage: ['english', 'hindi', 'telugu'].includes(preferredLanguage) ? preferredLanguage : 'english', isVerified: true, approvalStatus: 1 });
+    if (!user.isActive) return res.status(403).json({ success: false, message: 'Account is deactivated' });
+    user.lastLogin = new Date(); user.isVerified = true; await user.save();
+    res.json({ success: true, data: { user: { id: user._id, phoneNumber: user.phoneNumber, name: user.name, preferredLanguage: user.preferredLanguage }, token: generateToken(user._id), tokenType: 'Bearer' } });
+  } catch (error) { console.error('MSG91 verification error:', error.message); res.status(502).json({ success: false, message: 'MSG91 verification service unavailable' }); }
+});
+
 // Validation middleware
 const validatePhoneNumber = [
   body('phoneNumber')
