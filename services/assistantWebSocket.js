@@ -34,6 +34,15 @@ function attachAssistantWebSocket(server) {
 
   wss.on('connection', ws => {
     const session = { chunks: [], messages: [], startedAt: Date.now(), language: 'english', service: 'general', mimeType: 'audio/wav' };
+    let saved = false;
+    const persistConversation = async () => {
+      if (saved || !session.messages.length) return null;
+      const summary = await assistant.summary({ messages: session.messages.map(m => ({ userTranscript: m.role === 'user' ? m.text : '', assistantResponse: m.role === 'assistant' ? m.text : '' })), language: session.language });
+      if (!summary) throw new Error('Conversation summary was empty; conversation was not saved');
+      const conversation = await Conversation.create({ userId: ws.user._id, service: session.service, language: session.language, messages: session.messages, summary, duration: Math.round((Date.now() - session.startedAt) / 1000), saved: false });
+      saved = true;
+      return conversation;
+    };
     ws.on('message', async (raw, isBinary) => {
       try {
         if (isBinary || Buffer.isBuffer(raw)) { session.chunks.push(Buffer.from(raw).toString('base64')); console.info('Assistant WebSocket audio binary chunk received:', raw.length); return; }
@@ -53,16 +62,11 @@ function attachAssistantWebSocket(server) {
         send(ws, { type: 'audio', audio: speech.audio, mimeType: speech.mimeType });
         session.messages.push({ role: 'user', text: transcript }, { role: 'assistant', text: answer });
         send(ws, { type: 'turn.complete' });
+        const conversation = await persistConversation();
+        if (conversation) send(ws, { type: 'conversation.saved', conversationId: conversation._id.toString() });
       } catch (error) { console.error('Assistant WebSocket error:', error); send(ws, { type: 'error', message: error.message || 'Voice conversation failed' }); }
     });
-    ws.on('close', async () => {
-      if (!session.messages.length) return;
-      try {
-        const summary = await assistant.summary({ messages: session.messages.map(m => ({ userTranscript: m.role === 'user' ? m.text : '', assistantResponse: m.role === 'assistant' ? m.text : '' })), language: session.language });
-        const conversation = await Conversation.create({ userId: ws.user._id, service: session.service, language: session.language, messages: session.messages, summary, duration: Math.round((Date.now() - session.startedAt) / 1000), saved: false });
-        console.info('Conversation saved:', conversation._id.toString());
-      } catch (error) { console.error('Conversation save failed:', error); }
-    });
+    ws.on('close', () => { if (!saved && session.messages.length) console.warn('Assistant WebSocket closed before conversation.saved confirmation'); });
   });
   return wss;
 }
