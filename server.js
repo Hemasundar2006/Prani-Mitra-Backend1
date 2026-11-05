@@ -24,7 +24,9 @@ app.use(cors({
     'http://localhost:8081',
     'http://localhost:19006',
     // New demo frontend
-    process.env.FRONTEND_URL           // additional production frontend from env
+    process.env.FRONTEND_URL,
+    process.env.EXPO_WEB_URL,
+    process.env.PRODUCTION_WEB_URL
   ].filter(Boolean), // Remove any undefined values
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
@@ -56,7 +58,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(morgan('combined'));
 
 // Database connection
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/prani-mitra', {
+mongoose.connect(process.env.DATABASE_URL || process.env.MONGODB_URI || 'mongodb://localhost:27017/prani-mitra', {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
@@ -65,6 +67,8 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/prani-mit
 
 // Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/assistant', require('./routes/assistant'));
+app.use('/api/conversations', require('./routes/conversations'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/plans', require('./routes/plans'));
 app.use('/api/payments', require('./routes/payments'));
@@ -75,9 +79,15 @@ app.use('/api/contact', require('./routes/contact'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    message: 'Prani Mitra Backend is running',
+  const checks = {
+    backend: true,
+    gemini: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_MODEL),
+    gnani: Boolean(process.env.GNANI_API_KEY),
+    database: mongoose.connection.readyState === 1
+  };
+  res.status(Object.values(checks).every(Boolean) ? 200 : 503).json({
+    status: Object.values(checks).every(Boolean) ? 'OK' : 'DEGRADED',
+    checks,
     timestamp: new Date().toISOString(),
     version: '1.0.0'
   });
