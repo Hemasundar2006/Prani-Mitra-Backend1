@@ -175,7 +175,7 @@ callSchema.methods.calculateCost = function(plan) {
 
 // Static method to get call analytics
 callSchema.statics.getAnalytics = function(userId, startDate, endDate) {
-  const matchStage = { userId: mongoose.Types.ObjectId(userId) };
+  const matchStage = { userId: new mongoose.Types.ObjectId(userId) };
   
   if (startDate && endDate) {
     matchStage.createdAt = {
