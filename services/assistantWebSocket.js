@@ -1,4 +1,5 @@
 const { WebSocketServer } = require('ws');
+const WebSocket = require('ws');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Conversation = require('../models/Conversation');
@@ -33,6 +34,7 @@ function attachAssistantWebSocket(server) {
   wss.on('connection', ws => {
     const session = { chunks: [], messages: [], startedAt: Date.now(), language: 'english', service: 'general', mimeType: 'audio/wav', speaking: false };
     let saved = false;
+    let processingTranscript = false;
     const persistConversation = async () => {
       if (saved || !session.messages.length) return null;
       const summary = await assistant.summary({ messages: session.messages.map(m => ({ userTranscript: m.role === 'user' ? m.text : '', assistantResponse: m.role === 'assistant' ? m.text : '' })), language: session.language });
@@ -41,19 +43,44 @@ function attachAssistantWebSocket(server) {
       saved = true;
       return conversation;
     };
+    const handleTranscript = async transcript => {
+      if (!transcript || processingTranscript) return;
+      processingTranscript = true;
+      send(ws, { type: 'transcript.partial', text: transcript });
+      send(ws, { type: 'transcript.final', text: transcript });
+      const answer = await assistant.reply({ transcript, history: session.messages, language: session.language, service: session.service });
+      send(ws, { type: 'assistant.partial', text: answer });
+      send(ws, { type: 'assistant.final', text: answer });
+      session.speaking = true;
+      const speech = await assistant.speak({ text: answer, language: session.language });
+      if (session.speaking) send(ws, { type: 'audio', audio: speech.audio, mimeType: speech.mimeType });
+      session.messages.push({ role: 'user', text: transcript }, { role: 'assistant', text: answer });
+      session.speaking = false;
+      processingTranscript = false;
+      send(ws, { type: 'turn.complete' });
+      const conversation = await persistConversation();
+      if (conversation) send(ws, { type: 'conversation.saved', conversationId: conversation._id.toString() });
+    };
     ws.on('message', async (raw, isBinary) => {
       try {
         if (isBinary || Buffer.isBuffer(raw)) { session.chunks.push(Buffer.from(raw).toString('base64')); console.info('Assistant WebSocket audio binary chunk received:', raw.length); return; }
         const event = JSON.parse(raw.toString());
         if (event.type === 'start') {
-          if (!ws.user && event.token) { const decoded = jwt.verify(String(event.token).replace(/^Bearer\s+/i, ''), process.env.JWT_SECRET); ws.user = await User.findById(decoded.userId); }
+          const startToken = event.token || event.authorization;
+          if (!ws.user && startToken) { const decoded = jwt.verify(String(startToken).replace(/^Bearer\s+/i, ''), process.env.JWT_SECRET); ws.user = await User.findById(decoded.userId); }
           if (!ws.user || !ws.user.isActive) return send(ws, { type: 'error', code: 'INVALID_TOKEN', message: 'Valid Bearer login token required' });
           session.language = languageMap[event.language] || event.language; session.service = serviceMap[event.service] || event.service || 'general'; session.audio = event.audio || session.audio; session.mimeType = event.mimeType || 'audio/wav'; session.startedAt = Date.now();
           if (!['english', 'hindi', 'telugu'].includes(session.language)) return send(ws, { type: 'error', code: 'UNSUPPORTED_LANGUAGE', message: 'Unsupported language' });
           if (!['farming', 'animal_health', 'nutrition', 'government_schemes', 'general'].includes(session.service)) return send(ws, { type: 'error', code: 'UNSUPPORTED_SERVICE', message: 'Unsupported service' });
+          const languageCode = { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN' }[session.language];
+          session.gnani = new WebSocket(process.env.GNANI_STT_WS_URL || 'wss://api.vachana.ai/stt/v3/stream', { headers: { 'x-api-key-id': process.env.GNANI_API_KEY, language_code: languageCode, model: 'prisma-v2.5', 'x-sample-rate': String(session.audio?.sampleRate || 16000), 'x-vad-threshold': '0.5', 'x-min-silence-ms': '700' } });
+          session.gnani.on('open', () => console.info('Gnani realtime STT connected'));
+          session.gnani.on('message', message => { try { const providerEvent = JSON.parse(message.toString()); if (providerEvent.type === 'transcript' && providerEvent.text) handleTranscript(providerEvent.text).catch(error => { console.error('Realtime assistant error:', error.message); send(ws, { type: 'error', code: 'PROVIDER_FAILURE', message: 'Assistant provider failed' }); }); if (providerEvent.type === 'error') { console.error('Gnani realtime STT error:', providerEvent.message); send(ws, { type: 'error', code: 'GNANI_STT_FAILURE', message: 'Speech recognition failed' }); } } catch (_) {} });
+          session.gnani.on('error', error => { console.error('Gnani realtime STT connection error:', error.message); send(ws, { type: 'error', code: 'GNANI_STT_FAILURE', message: 'Speech recognition connection failed' }); });
           console.info('Assistant WebSocket started:', { language: session.language, service: session.service, audio: Boolean(session.audio) }); return;
         }
-        if (event.type === 'audio' || event.type === 'audio_chunk') { if (typeof event.audio !== 'string' || event.audio.length > 1024 * 1024) return send(ws, { type: 'error', code: 'INVALID_AUDIO', message: 'Invalid audio chunk' }); session.speaking = false; session.chunks.push(event.audio.replace(/^data:.*?;base64,/, '')); console.info('Assistant WebSocket audio chunk received:', { chunks: session.chunks.length, bytes: Buffer.byteLength(event.audio, 'base64') }); return; }
+        if (event.type === 'audio' || event.type === 'audio_chunk') { if (typeof event.audio !== 'string' || event.audio.length > 1024 * 1024) return send(ws, { type: 'error', code: 'INVALID_AUDIO', message: 'Invalid audio chunk' }); session.speaking = false; const pcm = Buffer.from(event.audio.replace(/^data:.*?;base64,/, ''), 'base64'); if (session.gnani?.readyState === WebSocket.OPEN) session.gnani.send(pcm); else session.chunks.push(pcm.toString('base64')); return; }
+        if (event.type === 'stop' && session.gnani?.readyState === WebSocket.OPEN) { session.gnani.send(JSON.stringify({ type: 'commit' })); return; }
         if (event.type !== 'stop') return send(ws, { type: 'error', message: 'Unsupported event type' });
         if (!session.chunks.length) { console.warn('Assistant WebSocket stop received with no audio chunks'); return send(ws, { type: 'error', message: 'No audio received' }); }
         let pcm = Buffer.concat(session.chunks.map(chunk => Buffer.from(chunk, 'base64')));
