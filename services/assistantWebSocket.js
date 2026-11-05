@@ -5,7 +5,7 @@ const Conversation = require('../models/Conversation');
 const assistant = require('./assistantService');
 
 const languageMap = { English: 'english', Hindi: 'hindi', Telugu: 'telugu', english: 'english', hindi: 'hindi', telugu: 'telugu' };
-const serviceMap = { Farming: 'farming', 'Animal Health': 'animal_health', Nutrition: 'general', Schemes: 'government_schemes', General: 'general' };
+const serviceMap = { Farming: 'farming', farming: 'farming', 'Animal Health': 'animal_health', 'animal health': 'animal_health', 'Animal Health': 'animal_health', Nutrition: 'nutrition', nutrition: 'nutrition', Schemes: 'government_schemes', schemes: 'government_schemes', 'Government Schemes': 'government_schemes', General: 'general', general: 'general' };
 
 function send(ws, payload) { if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(payload)); }
 function tokenFrom(request) { const match = request.headers.authorization?.match(/^Bearer\s+(.+)$/i); return match?.[1]; }
@@ -24,16 +24,14 @@ function attachAssistantWebSocket(server) {
     if (request.url !== '/ws/assistant') return;
     try {
       const token = tokenFrom(request);
-      if (!token) throw new Error('Authorization Bearer token required');
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.userId);
-      if (!user || !user.isActive) throw new Error('Invalid user token');
+      let user = null;
+      if (token) { const decoded = jwt.verify(token, process.env.JWT_SECRET); user = await User.findById(decoded.userId); if (!user || !user.isActive) throw new Error('Invalid user token'); }
       wss.handleUpgrade(request, socket, head, ws => { ws.user = user; wss.emit('connection', ws, request); });
     } catch (error) { socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); socket.destroy(); }
   });
 
   wss.on('connection', ws => {
-    const session = { chunks: [], messages: [], startedAt: Date.now(), language: 'english', service: 'general', mimeType: 'audio/wav' };
+    const session = { chunks: [], messages: [], startedAt: Date.now(), language: 'english', service: 'general', mimeType: 'audio/wav', speaking: false };
     let saved = false;
     const persistConversation = async () => {
       if (saved || !session.messages.length) return null;
@@ -47,8 +45,15 @@ function attachAssistantWebSocket(server) {
       try {
         if (isBinary || Buffer.isBuffer(raw)) { session.chunks.push(Buffer.from(raw).toString('base64')); console.info('Assistant WebSocket audio binary chunk received:', raw.length); return; }
         const event = JSON.parse(raw.toString());
-        if (event.type === 'start') { session.language = languageMap[event.language] || event.language; session.service = serviceMap[event.service] || event.service || 'general'; session.audio = event.audio || session.audio; session.mimeType = event.mimeType || 'audio/wav'; session.startedAt = Date.now(); console.info('Assistant WebSocket started:', { language: session.language, service: session.service, audio: session.audio }); return; }
-        if (event.type === 'audio' || event.type === 'audio_chunk') { if (typeof event.audio !== 'string' || event.audio.length > 1024 * 1024) return send(ws, { type: 'error', message: 'Invalid audio chunk' }); session.chunks.push(event.audio.replace(/^data:.*?;base64,/, '')); console.info('Assistant WebSocket audio chunk received:', { chunks: session.chunks.length, bytes: Buffer.byteLength(event.audio, 'base64') }); return; }
+        if (event.type === 'start') {
+          if (!ws.user && event.token) { const decoded = jwt.verify(String(event.token).replace(/^Bearer\s+/i, ''), process.env.JWT_SECRET); ws.user = await User.findById(decoded.userId); }
+          if (!ws.user || !ws.user.isActive) return send(ws, { type: 'error', code: 'INVALID_TOKEN', message: 'Valid Bearer login token required' });
+          session.language = languageMap[event.language] || event.language; session.service = serviceMap[event.service] || event.service || 'general'; session.audio = event.audio || session.audio; session.mimeType = event.mimeType || 'audio/wav'; session.startedAt = Date.now();
+          if (!['english', 'hindi', 'telugu'].includes(session.language)) return send(ws, { type: 'error', code: 'UNSUPPORTED_LANGUAGE', message: 'Unsupported language' });
+          if (!['farming', 'animal_health', 'nutrition', 'government_schemes', 'general'].includes(session.service)) return send(ws, { type: 'error', code: 'UNSUPPORTED_SERVICE', message: 'Unsupported service' });
+          console.info('Assistant WebSocket started:', { language: session.language, service: session.service, audio: Boolean(session.audio) }); return;
+        }
+        if (event.type === 'audio' || event.type === 'audio_chunk') { if (typeof event.audio !== 'string' || event.audio.length > 1024 * 1024) return send(ws, { type: 'error', code: 'INVALID_AUDIO', message: 'Invalid audio chunk' }); session.speaking = false; session.chunks.push(event.audio.replace(/^data:.*?;base64,/, '')); console.info('Assistant WebSocket audio chunk received:', { chunks: session.chunks.length, bytes: Buffer.byteLength(event.audio, 'base64') }); return; }
         if (event.type !== 'stop') return send(ws, { type: 'error', message: 'Unsupported event type' });
         if (!session.chunks.length) { console.warn('Assistant WebSocket stop received with no audio chunks'); return send(ws, { type: 'error', message: 'No audio received' }); }
         let pcm = Buffer.concat(session.chunks.map(chunk => Buffer.from(chunk, 'base64')));
@@ -58,7 +63,9 @@ function attachAssistantWebSocket(server) {
         const answer = await assistant.reply({ transcript, history: session.messages, language: session.language, service: session.service });
         send(ws, { type: 'assistant.partial', text: answer });
         send(ws, { type: 'assistant.final', text: answer });
+        session.speaking = true;
         const speech = await assistant.speak({ text: answer, language: session.language });
+        if (!session.speaking) return;
         send(ws, { type: 'audio', audio: speech.audio, mimeType: speech.mimeType });
         session.messages.push({ role: 'user', text: transcript }, { role: 'assistant', text: answer });
         send(ws, { type: 'turn.complete' });

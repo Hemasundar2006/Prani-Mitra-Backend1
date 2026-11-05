@@ -5,7 +5,7 @@ const assistant = require('../services/assistantService');
 const router = express.Router();
 const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 }, fileFilter: (req, file, cb) => cb(null, ['audio/m4a', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/ogg'].includes(file.mimetype)) });
 const languages = ['english', 'hindi', 'telugu'];
-const services = ['farming', 'crop_advice', 'animal_health', 'weather', 'government_schemes', 'market_prices', 'general'];
+const services = ['farming', 'crop_advice', 'animal_health', 'nutrition', 'weather', 'government_schemes', 'market_prices', 'general'];
 const normalizeLanguage = value => ({ English: 'english', Hindi: 'hindi', Telugu: 'telugu', english: 'english', hindi: 'hindi', telugu: 'telugu' }[value] || value);
 const normalizeService = value => ({
   Farming: 'farming',

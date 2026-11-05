@@ -9,7 +9,7 @@ const messageSchema = new mongoose.Schema({
 
 const conversationSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
-  service: { type: String, required: true, enum: ['farming', 'crop_advice', 'animal_health', 'weather', 'government_schemes', 'market_prices', 'general'] },
+  service: { type: String, required: true, enum: ['farming', 'crop_advice', 'animal_health', 'nutrition', 'weather', 'government_schemes', 'market_prices', 'general'] },
   language: { type: String, required: true, enum: ['english', 'hindi', 'telugu'] },
   messages: { type: [messageSchema], default: [] },
   summary: { type: String, maxlength: 4000 },
