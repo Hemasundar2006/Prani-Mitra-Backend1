@@ -20,7 +20,10 @@ app.use(cors({
     'http://127.0.0.1:3001',
     'https://prani-mitra1.vercel.app', // production frontend (Vercel)
     'https://prani-mitra1-6y9uifsit-hemasundar2006s-projects.vercel.app', // Vercel preview URL
-    'https://prani-mitra-demo2.vercel.app', // New demo frontend
+    'https://prani-mitra-demo2.vercel.app',
+    'http://localhost:8081',
+    'http://localhost:19006',
+    // New demo frontend
     process.env.FRONTEND_URL           // additional production frontend from env
   ].filter(Boolean), // Remove any undefined values
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
