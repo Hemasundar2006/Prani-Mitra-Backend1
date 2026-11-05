@@ -22,8 +22,13 @@ async function transcribe({ audio, mimeType, language }) {
   form.append('language_code', { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN' }[language]);
   form.append('model', process.env.GNANI_STT_MODEL || 'prisma-v2.5');
   const response = await fetch(process.env.GNANI_STT_URL || 'https://api.vachana.ai/stt/v3', { method: 'POST', headers: { 'X-API-Key-ID': apiKey }, body: form });
-  const data = await response.json();
-  if (!response.ok) throw Object.assign(new Error(data.message || data.detail?.message || 'Gnani STT request failed'), { status: 502 });
+  const responseText = await response.text();
+  let data;
+  try { data = JSON.parse(responseText); } catch (_) { data = {}; }
+  if (!response.ok) {
+    console.error('Gnani STT error:', response.status, responseText);
+    throw Object.assign(new Error(data.message || data.detail?.message || `Gnani STT failed with ${response.status}: ${responseText}`), { status: 502 });
+  }
   return data.text || data.transcript || data.data?.text || data.data?.transcript;
 }
 
