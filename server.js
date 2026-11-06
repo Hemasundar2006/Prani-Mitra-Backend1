@@ -87,6 +87,7 @@ app.get('/api/health', (req, res) => {
   const checks = {
     backend: true,
     gemini: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_MODEL),
+    geminiLive: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_LIVE_MODEL),
     gnani: Boolean(process.env.GNANI_API_KEY),
     database: mongoose.connection.readyState === 1
   };
