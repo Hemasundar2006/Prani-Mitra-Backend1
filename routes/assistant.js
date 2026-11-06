@@ -4,6 +4,14 @@ const { authenticateToken } = require('../middleware/auth');
 const assistant = require('../services/assistantService');
 const router = express.Router();
 const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 }, fileFilter: (req, file, cb) => cb(null, ['audio/m4a', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/ogg'].includes(file.mimetype)) });
+const liveTokenRateLimit = require('express-rate-limit')({
+  windowMs: 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: req => String(req.userId || req.ip),
+  handler: (req, res) => res.status(429).json({ success: false, message: 'Too many Gemini Live token requests. Please try again shortly.' })
+});
 const languages = ['english', 'hindi', 'telugu'];
 const services = ['farming', 'crop_advice', 'animal_health', 'nutrition', 'weather', 'government_schemes', 'market_prices', 'general'];
 const normalizeLanguage = value => ({ English: 'english', Hindi: 'hindi', Telugu: 'telugu', english: 'english', hindi: 'hindi', telugu: 'telugu' }[value] || value);
@@ -21,6 +29,33 @@ const normalizeService = value => ({
   'market-prices': 'market_prices'
 }[value] || value);
 const normalizeMessages = messages => (Array.isArray(messages) ? messages : []).slice(-20).filter(m => m && ['user', 'assistant'].includes(m.role)).map(m => ({ role: m.role, text: String(m.content ?? m.text ?? '').slice(0, 8000) })).filter(m => m.text);
+
+router.post('/live-token', authenticateToken, liveTokenRateLimit, async (req, res) => {
+  const { purpose, model } = req.body || {};
+  if (purpose !== 'gemini-live' || model !== 'gemini-3.8-live') return res.status(400).json({ success: false, message: 'purpose must be gemini-live and model must be gemini-3.8-live' });
+  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, message: 'Gemini Live is not configured' });
+  const now = Date.now();
+  const expiresAt = new Date(now + 30 * 60 * 1000);
+  const newSessionExpireTime = new Date(now + 60 * 1000);
+  try {
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+      body: JSON.stringify({ expireTime: expiresAt.toISOString(), newSessionExpireTime: newSessionExpireTime.toISOString(), liveConnectConstraints: { model: 'models/gemini-3.8-live', config: { responseModalities: ['AUDIO'] } } })
+    });
+    const responseText = await response.text();
+    let data = {};
+    try { data = JSON.parse(responseText); } catch (_) {}
+    if (!response.ok || !data.name) {
+      console.error('Gemini Live token provisioning failed:', { status: response.status, code: data.error?.status || data.status || 'UNKNOWN' });
+      return res.status(502).json({ success: false, message: 'Gemini Live token provisioning failed' });
+    }
+    res.status(200).json({ token: data.name, expiresAt: expiresAt.toISOString() });
+  } catch (error) {
+    console.error('Gemini Live token request failed:', { message: error.message });
+    res.status(502).json({ success: false, message: 'Gemini Live token service unavailable' });
+  }
+});
 const bad = (res, message) => res.status(400).json({ success: false, message });
 const validate = (body, requireTranscript = false) => {
   if (!languages.includes(body.language) || !services.includes(body.service)) return 'Unsupported language or service';
