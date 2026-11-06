@@ -29,6 +29,7 @@ const normalizeService = value => ({
   'market-prices': 'market_prices'
 }[value] || value);
 const normalizeMessages = messages => (Array.isArray(messages) ? messages : []).slice(-20).filter(m => m && ['user', 'assistant'].includes(m.role)).map(m => ({ role: m.role, text: String(m.content ?? m.text ?? '').slice(0, 8000) })).filter(m => m.text);
+const safeProviderMessage = value => String(value || 'Unknown provider error').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
 
 router.post('/live-token', authenticateToken, liveTokenRateLimit, async (req, res) => {
   const { purpose, model } = req.body || {};
@@ -47,8 +48,9 @@ router.post('/live-token', authenticateToken, liveTokenRateLimit, async (req, re
     let data = {};
     try { data = JSON.parse(responseText); } catch (_) {}
     if (!response.ok || !data.name) {
-      console.error('Gemini Live token provisioning failed:', { status: response.status, code: data.error?.status || data.status || 'UNKNOWN' });
-      return res.status(502).json({ success: false, message: 'Gemini Live token provisioning failed' });
+      const providerMessage = safeProviderMessage(data.error?.message || data.message || responseText);
+      console.error('Gemini Live token provisioning failed:', { status: response.status, code: data.error?.status || data.status || 'UNKNOWN', message: providerMessage });
+      return res.status(502).json({ error: `Gemini token provisioning failed (${response.status}): ${providerMessage}` });
     }
     res.status(200).json({ token: data.name, expiresAt: expiresAt.toISOString() });
   } catch (error) {
