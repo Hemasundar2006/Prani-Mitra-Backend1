@@ -42,7 +42,7 @@ router.post('/live-token', authenticateToken, liveTokenRateLimit, async (req, re
     const response = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
-      body: JSON.stringify({ expireTime: expiresAt.toISOString(), newSessionExpireTime: newSessionExpireTime.toISOString(), liveConnectConstraints: { model: 'models/gemini-3.8-live', config: { responseModalities: ['AUDIO'] } } })
+      body: JSON.stringify({ uses: 1, expireTime: expiresAt.toISOString(), newSessionExpireTime: newSessionExpireTime.toISOString(), fieldMask: 'model,generationConfig.responseModalities', bidiGenerateContentSetup: { model: 'models/gemini-3.8-live', generationConfig: { responseModalities: ['AUDIO'] } } })
     });
     const responseText = await response.text();
     let data = {};
