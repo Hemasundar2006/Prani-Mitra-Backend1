@@ -68,14 +68,14 @@ async function analyzeRecording({ transcript, language, service }) {
   const model = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
   const languageName = { english: 'English', hindi: 'Hindi', telugu: 'Telugu' }[language] || language;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
-  const instruction = `Analyze this farmer recording in ${languageName}. Service: ${service}. Return ONLY valid JSON with exactly these string fields: summary, immediateAction, urgency, response. urgency must be exactly one of normal, warning, urgent. Keep sentences short. Never diagnose animals definitively or prescribe unsafe medicine dosages. For urgent animal cases, tell the farmer to contact a qualified veterinarian immediately. For government schemes, tell the farmer to verify information with official sources. If incomplete, ask a follow-up question in response.`;
+  const instruction = `Analyze this farmer recording in ${languageName}. Service: ${service}. Return ONLY valid JSON with exactly these fields: summary (string), immediateAction (string), urgency (string), requiresContact (boolean), contactReason (string), response (string). urgency must be exactly normal, warning, or urgent. Set requiresContact true only when the farmer should contact a veterinarian, animal hospital, agriculture officer, or support service. Set it false for normal questions handled by general guidance. For serious animal symptoms set urgency urgent and requiresContact true. Never diagnose animals definitively or prescribe unsafe medicine dosages. For government schemes, tell the farmer to verify information with official sources. If incomplete, ask a follow-up question in response. Keep sentences short.`;
   let data;
   try { data = await postJson(url, { systemInstruction: { parts: [{ text: instruction }] }, contents: [{ role: 'user', parts: [{ text: transcript }] }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1200 } }); } catch (error) { throw Object.assign(error, { status: 502, provider: 'Gemini', providerStatus: error.providerStatus || 'UNKNOWN', providerCode: error.providerCode || 'UNKNOWN', requestId: error.requestId || 'UNKNOWN' }); }
   const raw = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
   if (!raw) throw Object.assign(new Error('Gemini returned no recording analysis'), { status: 502 });
   let result;
   try { result = JSON.parse(raw); } catch (_) { throw Object.assign(new Error('Gemini returned invalid analysis JSON'), { status: 502 }); }
-  if (!['normal', 'warning', 'urgent'].includes(result.urgency) || typeof result.summary !== 'string' || typeof result.immediateAction !== 'string' || typeof result.response !== 'string') throw Object.assign(new Error('Gemini returned incomplete analysis JSON'), { status: 502 });
+  if (!['normal', 'warning', 'urgent'].includes(result.urgency) || typeof result.summary !== 'string' || typeof result.immediateAction !== 'string' || typeof result.requiresContact !== 'boolean' || typeof result.contactReason !== 'string' || typeof result.response !== 'string') throw Object.assign(new Error('Gemini returned incomplete analysis JSON'), { status: 502 });
   return result;
 }
 
