@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const MAX_HISTORY = 20;
 const languageNames = { english: 'English', hindi: 'Hindi', telugu: 'Telugu' };
 
@@ -22,13 +23,13 @@ async function transcribe({ audio, mimeType, language }) {
   form.append('audio_file', new Blob([Buffer.from(audio, 'base64')], { type: mimeType }), `recording.${extension}`);
   form.append('language_code', { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN', 'en-IN': 'en-IN', 'hi-IN': 'hi-IN', 'te-IN': 'te-IN' }[language] || language);
   form.append('model', process.env.GNANI_STT_MODEL || 'prisma-v2.5');
-  const response = await fetch(process.env.GNANI_STT_URL || 'https://api.vachana.ai/stt/v3', { method: 'POST', headers: { 'X-API-Key-ID': apiKey }, body: form });
+  const requestId = crypto.randomUUID();
+  const response = await fetch(process.env.GNANI_STT_URL || 'https://api.vachana.ai/stt/v3', { method: 'POST', headers: { 'X-API-Key-ID': apiKey, 'X-API-Request-ID': requestId }, body: form });
   const responseText = await response.text();
   let data;
   try { data = JSON.parse(responseText); } catch (_) { data = {}; }
   if (!response.ok) {
-    console.error('Gnani STT error:', response.status, responseText);
-    throw Object.assign(new Error(data.message || data.detail?.message || `Gnani STT failed with ${response.status}: ${responseText}`), { status: 502 });
+    throw Object.assign(new Error(data.message || data.detail?.message || `Gnani STT failed with ${response.status}`), { status: 502, provider: 'Gnani STT', providerStatus: response.status, providerCode: data.error?.type || data.detail?.error_code || data.status_code || 'UNKNOWN', requestId: data.request_id || requestId });
   }
   return data.text || data.transcript || data.data?.text || data.data?.transcript;
 }
@@ -69,7 +70,7 @@ async function analyzeRecording({ transcript, language, service }) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
   const instruction = `Analyze this farmer recording in ${languageName}. Service: ${service}. Return ONLY valid JSON with exactly these string fields: summary, immediateAction, urgency, response. urgency must be exactly one of normal, warning, urgent. Keep sentences short. Never diagnose animals definitively or prescribe unsafe medicine dosages. For urgent animal cases, tell the farmer to contact a qualified veterinarian immediately. For government schemes, tell the farmer to verify information with official sources. If incomplete, ask a follow-up question in response.`;
   let data;
-  try { data = await postJson(url, { systemInstruction: { parts: [{ text: instruction }] }, contents: [{ role: 'user', parts: [{ text: transcript }] }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1200 } }); } catch (error) { console.error('Gemini recording analysis error:', error.message); throw Object.assign(error, { status: 502 }); }
+  try { data = await postJson(url, { systemInstruction: { parts: [{ text: instruction }] }, contents: [{ role: 'user', parts: [{ text: transcript }] }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1200 } }); } catch (error) { throw Object.assign(error, { status: 502, provider: 'Gemini', providerStatus: error.providerStatus || 'UNKNOWN', providerCode: error.providerCode || 'UNKNOWN', requestId: error.requestId || 'UNKNOWN' }); }
   const raw = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
   if (!raw) throw Object.assign(new Error('Gemini returned no recording analysis'), { status: 502 });
   let result;
@@ -79,8 +80,9 @@ async function analyzeRecording({ transcript, language, service }) {
 }
 
 async function speakRecording({ text, language }) {
+  const requestId = crypto.randomUUID();
   const response = await fetch(process.env.GNANI_TTS_URL || 'https://api.vachana.ai/api/v1/tts/inference', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key-ID': requireConfig('GNANI_API_KEY') }, body: JSON.stringify({ text, model: process.env.GNANI_TTS_MODEL || 'timbre-v2.5', voice: process.env.GNANI_TTS_VOICE || 'Kaveri', language: { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN' }[language], audio_config: { encoding: 'linear_pcm', container: 'wav', num_channels: 1, sample_rate: 24000, sample_width: 2 } }) });
-  if (!response.ok) throw Object.assign(new Error(`Gnani TTS failed with ${response.status}`), { status: 502 });
+  if (!response.ok) { let data = {}; const responseText = await response.text(); try { data = JSON.parse(responseText); } catch (_) {} throw Object.assign(new Error(data.message || data.detail?.message || `Gnani TTS failed with ${response.status}`), { status: 502, provider: 'Gnani TTS', providerStatus: response.status, providerCode: data.error?.type || data.detail?.error_code || data.status_code || 'UNKNOWN', requestId: data.request_id || requestId }); }
   return { audioBase64: Buffer.from(await response.arrayBuffer()).toString('base64'), audioFormat: 'wav', audioSampleRate: 24000 };
 }
 

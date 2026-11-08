@@ -57,12 +57,14 @@ router.post('/analyze-recording', authenticateToken, async (req, res) => {
     if (!transcript) throw Object.assign(new Error('Gnani returned no transcript'), { status: 502 });
     const analysis = await assistant.analyzeRecording({ transcript, language: normalizedLanguage.key, service });
     const spoken = analysis.immediateAction || analysis.response;
-    const speech = await assistant.speakRecording({ text: spoken, language: normalizedLanguage.key });
+    let speech = { audioBase64: null, audioFormat: 'wav', audioSampleRate: 24000, audioError: null };
+    try { speech = { ...(await assistant.speakRecording({ text: spoken, language: normalizedLanguage.key })), audioError: null }; }
+    catch (ttsError) { console.error('Recording provider failure:', { provider: ttsError.provider || 'Gnani TTS', status: ttsError.providerStatus || 'UNKNOWN', code: ttsError.providerCode || 'UNKNOWN', requestId: ttsError.requestId || 'UNKNOWN' }); speech.audioError = 'Gnani TTS failed'; }
     const record = await RecordingAnalysis.create({ userId: req.userId, language: normalizedLanguage.label, service, transcript, summary: analysis.summary, immediateAction: analysis.immediateAction, urgency: analysis.urgency, response: analysis.response, audioFormat: speech.audioFormat, audioSampleRate: speech.audioSampleRate, duration });
-    res.status(200).json({ success: true, data: { id: record._id.toString(), language: record.language, service: record.service, transcript: record.transcript, summary: record.summary, immediateAction: record.immediateAction, urgency: record.urgency, response: record.response, audioBase64: speech.audioBase64, audioFormat: record.audioFormat, audioSampleRate: record.audioSampleRate, duration: record.duration, createdAt: record.createdAt.toISOString() } });
+    res.status(200).json({ success: true, data: { id: record._id.toString(), language: record.language, service: record.service, transcript: record.transcript, summary: record.summary, immediateAction: record.immediateAction, urgency: record.urgency, response: record.response, audioBase64: speech.audioBase64, audioFormat: record.audioFormat, audioSampleRate: record.audioSampleRate, ...(speech.audioError ? { audioError: speech.audioError } : {}), duration: record.duration, createdAt: record.createdAt.toISOString() } });
   } catch (error) {
     const status = error.status === 502 ? 502 : error.name === 'ValidationError' ? 400 : 502;
-    console.error('Recording analysis failed:', { status, code: error.code || error.name || 'PROVIDER_FAILURE', message: safeProviderMessage(error.message) });
+    console.error('Recording analysis failed:', { provider: error.provider || 'analysis', status: error.providerStatus || status, code: error.providerCode || error.code || error.name || 'PROVIDER_FAILURE', requestId: error.requestId || 'UNKNOWN', message: safeProviderMessage(error.message) });
     res.status(status).json({ success: false, message: status === 502 ? 'Recording analysis provider failed' : 'Invalid recording analysis request' });
   }
 });
