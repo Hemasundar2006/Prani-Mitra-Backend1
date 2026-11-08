@@ -12,7 +12,7 @@ async function postJson(url, body, headers = {}) {
   const text = await response.text();
   let data;
   try { data = JSON.parse(text); } catch (_) { data = { raw: text }; }
-  if (!response.ok) throw Object.assign(new Error(data.message || data.error || `Provider request failed (${response.status})`), { status: 502, providerStatus: response.status });
+  if (!response.ok) throw Object.assign(new Error(data.message || data.error?.message || data.detail?.message || `Provider request failed (${response.status})`), { status: 502, providerStatus: response.status, providerCode: data.error?.status || data.error?.type || data.detail?.error_code || data.status_code || 'UNKNOWN' });
   return data;
 }
 
@@ -24,7 +24,10 @@ async function transcribe({ audio, mimeType, language }) {
   form.append('language_code', { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN', 'en-IN': 'en-IN', 'hi-IN': 'hi-IN', 'te-IN': 'te-IN' }[language] || language);
   form.append('model', process.env.GNANI_STT_MODEL || 'prisma-v2.5');
   const requestId = crypto.randomUUID();
-  const response = await fetch(process.env.GNANI_STT_URL || 'https://api.vachana.ai/stt/v3', { method: 'POST', headers: { 'X-API-Key-ID': apiKey, 'X-API-Request-ID': requestId }, body: form });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000);
+  let response;
+  try { response = await fetch(process.env.GNANI_STT_URL || 'https://api.vachana.ai/stt/v3', { method: 'POST', headers: { 'X-API-Key-ID': apiKey, 'X-API-Request-ID': requestId }, body: form, signal: controller.signal }); } catch (error) { throw Object.assign(new Error(error.name === 'AbortError' ? 'Gnani STT request timed out' : 'Gnani STT network request failed'), { status: 502, provider: 'Gnani STT', providerStatus: 502, providerCode: error.name || 'NETWORK_ERROR', requestId }); } finally { clearTimeout(timeout); }
   const responseText = await response.text();
   let data;
   try { data = JSON.parse(responseText); } catch (_) { data = {}; }

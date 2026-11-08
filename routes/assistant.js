@@ -40,6 +40,7 @@ async function emergencyContacts(service, latitude, longitude) { const categorie
 
 router.post('/analyze-recording', authenticateToken, async (req, res) => {
   try {
+    const startedAt = Date.now();
     const { audioBase64, language, service, duration, latitude, longitude } = req.body || {};
     const errors = {};
     if (typeof audioBase64 !== 'string' || !audioBase64.trim()) errors.audioBase64 = 'Expected non-empty base64 PCM16 audio';
@@ -53,6 +54,7 @@ router.post('/analyze-recording', authenticateToken, async (req, res) => {
     let pcm;
     try { pcm = Buffer.from(encodedAudio, 'base64'); } catch (_) { return res.status(400).json({ success: false, message: 'Invalid audioBase64', errors: { audioBase64: 'Expected non-empty base64 PCM16 audio' } }); }
     if (!pcm.length || pcm.length % 2 !== 0) return res.status(400).json({ success: false, message: 'Invalid audioBase64', errors: { audioBase64: 'Expected non-empty base64 PCM16 audio' } });
+    console.info('Recording analysis input validated:', { language: recordingLanguages[language].code, service, duration, pcmBytes: pcm.length, pcmSamples: pcm.length / 2, gnaniKeyConfigured: Boolean(process.env.GNANI_API_KEY), geminiKeyConfigured: Boolean(process.env.GEMINI_API_KEY) });
     if (!process.env.GNANI_API_KEY || !process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, message: 'Required AI providers are not configured' });
     const normalizedLanguage = recordingLanguages[language];
     const wav = pcmToWav(pcm);
@@ -66,11 +68,15 @@ router.post('/analyze-recording', authenticateToken, async (req, res) => {
     let contacts = [];
     if (analysis.requiresContact) { try { contacts = await emergencyContacts(service, Number(latitude), Number(longitude)); } catch (contactError) { console.error('Emergency contact lookup failed:', { code: contactError.code || contactError.name || 'LOOKUP_FAILED' }); } }
     const record = await RecordingAnalysis.create({ userId: req.userId, language: normalizedLanguage.label, service, transcript, summary: analysis.summary, immediateAction: analysis.immediateAction, urgency: analysis.urgency, requiresContact: analysis.requiresContact, contactReason: analysis.contactReason, response: analysis.response, contacts, audioFormat: speech.audioFormat, audioSampleRate: speech.audioSampleRate, duration });
+    console.info('Recording analysis completed:', { durationMs: Date.now() - startedAt, ttsAvailable: Boolean(speech.audioBase64) });
     res.status(200).json({ success: true, data: { id: record._id.toString(), language: record.language, service: record.service, transcript: record.transcript, summary: record.summary, immediateAction: record.immediateAction, urgency: record.urgency, requiresContact: record.requiresContact, contactReason: record.contactReason, response: record.response, contacts, audioBase64: speech.audioBase64, audioFormat: record.audioFormat, audioSampleRate: record.audioSampleRate, ...(speech.audioError ? { audioError: speech.audioError } : {}), duration: record.duration, createdAt: record.createdAt.toISOString() } });
   } catch (error) {
     const status = error.status === 502 ? 502 : error.name === 'ValidationError' ? 400 : 502;
-    console.error('Recording analysis failed:', { provider: error.provider || 'analysis', status: error.providerStatus || status, code: error.providerCode || error.code || error.name || 'PROVIDER_FAILURE', requestId: error.requestId || 'UNKNOWN', message: safeProviderMessage(error.message) });
-    res.status(status).json({ success: false, message: status === 502 ? 'Recording analysis provider failed' : 'Invalid recording analysis request' });
+    const providerStatus = error.providerStatus || status;
+    const details = safeProviderMessage(error.message || 'Provider request failed');
+    console.error('Recording analysis failed:', { provider: error.provider || 'analysis', status: providerStatus, code: error.providerCode || error.code || error.name || 'PROVIDER_FAILURE', requestId: error.requestId || 'UNKNOWN', message: details });
+    if (status === 502) return res.status(502).json({ success: false, message: 'Recording analysis provider failed', providerStatus: 502, details });
+    res.status(status).json({ success: false, message: 'Invalid recording analysis request', providerStatus: status, details });
   }
 });
 
