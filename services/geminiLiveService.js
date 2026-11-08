@@ -1,14 +1,16 @@
 const WebSocket = require('ws');
+const { getProviderConfig } = require('./providerConfig');
 
 const models = { 'gemini-3.1-flash-live-preview': true, 'gemini-2.5-flash-native-audio-preview-12-2025': true };
 
 function languageName(language) { return { english: 'English', hindi: 'Hindi', telugu: 'Telugu' }[language] || language; }
 
 function connect({ language, service, onTranscript, onAssistantText, onAudio, onTurnComplete, onInterrupted, onError, onOpen }) {
-  if (!process.env.GEMINI_API_KEY) throw new Error('Gemini Live is not configured');
+  const { geminiKey } = getProviderConfig();
+  if (!geminiKey) throw new Error('Gemini provider is not configured');
   const model = process.env.GEMINI_LIVE_MODEL || 'gemini-3.1-flash-live-preview';
   if (!models[model]) throw new Error('Configured Gemini Live model is not supported');
-  const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(process.env.GEMINI_API_KEY)}`;
+  const url = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(geminiKey)}`;
   const socket = new WebSocket(url);
   let setupComplete = false;
   const pendingAudio = [];

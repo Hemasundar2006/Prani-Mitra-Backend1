@@ -1,10 +1,13 @@
 const crypto = require('crypto');
+const { getProviderConfig } = require('./providerConfig');
 const MAX_HISTORY = 20;
 const languageNames = { english: 'English', hindi: 'Hindi', telugu: 'Telugu' };
 
 function requireConfig(name) {
-  if (!process.env[name]) throw Object.assign(new Error(`${name} is not configured`), { status: 503 });
-  return process.env[name];
+  const { gnaniKey, geminiKey } = getProviderConfig();
+  const value = name === 'GNANI_API_KEY' || name === 'GNANI_API_KEY_ID' ? gnaniKey : name === 'GEMINI_API_KEY' ? geminiKey : process.env[name];
+  if (!value) throw Object.assign(new Error(`${name} is not configured`), { status: 503 });
+  return value;
 }
 
 async function postJson(url, body, headers = {}) {

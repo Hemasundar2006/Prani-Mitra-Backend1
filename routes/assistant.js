@@ -4,6 +4,7 @@ const { authenticateToken } = require('../middleware/auth');
 const assistant = require('../services/assistantService');
 const RecordingAnalysis = require('../models/RecordingAnalysis');
 const SupportContact = require('../models/SupportContact');
+const { getProviderConfig, logProviderConfig } = require('../services/providerConfig');
 const router = express.Router();
 const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 }, fileFilter: (req, file, cb) => cb(null, ['audio/m4a', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/ogg'].includes(file.mimetype)) });
 const liveTokenRateLimit = require('express-rate-limit')({
@@ -38,11 +39,12 @@ const recordingServices = new Set(['animal-health', 'farming', 'nutrition', 'sch
 function pcmToWav(pcm, sampleRate = 16000, channels = 1) { const header = Buffer.alloc(44); header.write('RIFF', 0); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVE', 8); header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(channels, 22); header.writeUInt32LE(sampleRate, 24); header.writeUInt32LE(sampleRate * channels * 2, 28); header.writeUInt16LE(channels * 2, 32); header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(pcm.length, 40); return Buffer.concat([header, pcm]); }
 
 router.get('/providers/health', authenticateToken, async (req, res) => {
-  const gnaniConfigured = Boolean(process.env.GNANI_API_KEY);
-  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_MODEL);
+  const { gnaniKey, geminiKey } = getProviderConfig();
+  const gnaniConfigured = Boolean(gnaniKey);
+  const geminiConfigured = Boolean(geminiKey);
   const [gnaniReachable, geminiReachable] = await Promise.all([
-    gnaniConfigured ? providerReachable(process.env.GNANI_STT_URL || 'https://api.vachana.ai/stt/v3', { 'X-API-Key-ID': process.env.GNANI_API_KEY }) : Promise.resolve(false),
-    geminiConfigured ? providerReachable('https://generativelanguage.googleapis.com/v1beta/models', { 'x-goog-api-key': process.env.GEMINI_API_KEY }) : Promise.resolve(false)
+    gnaniConfigured ? providerReachable(process.env.GNANI_STT_URL || 'https://api.vachana.ai/stt/v3', { 'X-API-Key-ID': gnaniKey }) : Promise.resolve(false),
+    geminiConfigured ? providerReachable('https://generativelanguage.googleapis.com/v1beta/models', { 'x-goog-api-key': geminiKey }) : Promise.resolve(false)
   ]);
   res.json({ gnani: { configured: gnaniConfigured, reachable: gnaniReachable }, gemini: { configured: geminiConfigured, reachable: geminiReachable } });
 });
@@ -65,8 +67,10 @@ router.post('/analyze-recording', authenticateToken, async (req, res) => {
     let pcm;
     try { pcm = Buffer.from(encodedAudio, 'base64'); } catch (_) { return res.status(400).json({ success: false, message: 'Invalid audioBase64', errors: { audioBase64: 'Expected non-empty base64 PCM16 audio' } }); }
     if (!pcm.length || pcm.length % 2 !== 0) return res.status(400).json({ success: false, message: 'Invalid audioBase64', errors: { audioBase64: 'Expected non-empty base64 PCM16 audio' } });
-    console.info('Recording analysis input validated:', { language: recordingLanguages[language].code, service, duration, pcmBytes: pcm.length, pcmSamples: pcm.length / 2, gnaniKeyConfigured: Boolean(process.env.GNANI_API_KEY), geminiKeyConfigured: Boolean(process.env.GEMINI_API_KEY) });
-    if (!process.env.GNANI_API_KEY || !process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, message: 'Required AI providers are not configured' });
+    const { gnaniKey, geminiKey } = logProviderConfig();
+    console.info('Recording analysis input validated:', { language: recordingLanguages[language].code, service, duration, pcmBytes: pcm.length, pcmSamples: pcm.length / 2 });
+    if (!gnaniKey) return res.status(503).json({ success: false, message: 'Gnani provider is not configured' });
+    if (!geminiKey) return res.status(503).json({ success: false, message: 'Gemini provider is not configured' });
     const normalizedLanguage = recordingLanguages[language];
     const wav = pcmToWav(pcm);
     const transcript = await assistant.transcribe({ audio: wav.toString('base64'), mimeType: 'audio/wav', language: normalizedLanguage.code });
@@ -100,14 +104,14 @@ router.get('/recordings', authenticateToken, async (req, res, next) => {
 router.post('/live-token', authenticateToken, liveTokenRateLimit, async (req, res) => {
   const { purpose, model } = req.body || {};
   if (purpose !== 'gemini-live' || model !== 'gemini-3.8-live') return res.status(400).json({ success: false, message: 'purpose must be gemini-live and model must be gemini-3.8-live' });
-  if (!process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, message: 'Gemini Live is not configured' });
+  if (!getProviderConfig().geminiKey) return res.status(503).json({ success: false, message: 'Gemini provider is not configured' });
   const now = Date.now();
   const expiresAt = new Date(now + 30 * 60 * 1000);
   const newSessionExpireTime = new Date(now + 60 * 1000);
   try {
     const response = await fetch('https://generativelanguage.googleapis.com/v1beta/auth_tokens', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': process.env.GEMINI_API_KEY },
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': getProviderConfig().geminiKey },
       body: JSON.stringify({ uses: 1, expireTime: expiresAt.toISOString(), newSessionExpireTime: newSessionExpireTime.toISOString(), fieldMask: 'model,generationConfig.responseModalities', bidiGenerateContentSetup: { model: 'models/gemini-3.8-live', generationConfig: { responseModalities: ['AUDIO'] } } })
     });
     const responseText = await response.text();

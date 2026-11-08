@@ -1,6 +1,7 @@
 const { WebSocketServer } = require('ws');
 const WebSocket = require('ws');
 const geminiLive = require('./geminiLiveService');
+const { getProviderConfig } = require('./providerConfig');
 const jwt = require('jsonwebtoken');
 const assistant = require('./assistantService');
 
@@ -65,7 +66,7 @@ function attachAssistantWebSocket(server) {
             console.info('Gemini Live session requested'); return;
           }
           const languageCode = { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN' }[session.language];
-          session.gnani = new WebSocket(process.env.GNANI_STT_WS_URL || 'wss://api.vachana.ai/stt/v3/stream', { headers: { 'x-api-key-id': process.env.GNANI_API_KEY, language_code: languageCode, model: 'prisma-v2.5', 'x-sample-rate': String(session.audio?.sampleRate || 16000), 'x-vad-threshold': '0.5', 'x-min-silence-ms': '700' } });
+          session.gnani = new WebSocket(process.env.GNANI_STT_WS_URL || 'wss://api.vachana.ai/stt/v3/stream', { headers: { 'x-api-key-id': getProviderConfig().gnaniKey, language_code: languageCode, model: 'prisma-v2.5', 'x-sample-rate': String(session.audio?.sampleRate || 16000), 'x-vad-threshold': '0.5', 'x-min-silence-ms': '700' } });
           session.gnani.on('open', () => console.info('Gnani realtime STT connected'));
           session.gnani.on('message', message => { try { const providerEvent = JSON.parse(message.toString()); if (providerEvent.type === 'transcript' && providerEvent.text) handleTranscript(providerEvent.text).catch(error => { console.error('Realtime assistant error:', error.message); send(ws, { type: 'error', code: 'PROVIDER_FAILURE', message: 'Assistant provider failed' }); }); if (providerEvent.type === 'error') { console.error('Gnani realtime STT error:', providerEvent.message); send(ws, { type: 'error', code: 'GNANI_STT_FAILURE', message: 'Speech recognition failed' }); } } catch (_) {} });
           session.gnani.on('error', error => { console.error('Gnani realtime STT connection error:', error.message); send(ws, { type: 'error', code: 'GNANI_STT_FAILURE', message: 'Speech recognition connection failed' }); });

@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
+const { getProviderConfig } = require('./services/providerConfig');
 require('dotenv').config();
 
 const app = express();
@@ -85,11 +86,12 @@ app.use('/api/support', require('./routes/support'));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
+  const { gnaniKey, geminiKey } = getProviderConfig();
   const checks = {
     backend: true,
-    gemini: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_MODEL),
-    geminiLive: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_LIVE_MODEL),
-    gnani: Boolean(process.env.GNANI_API_KEY),
+    gemini: Boolean(geminiKey && process.env.GEMINI_MODEL),
+    geminiLive: Boolean(geminiKey && process.env.GEMINI_LIVE_MODEL),
+    gnani: Boolean(gnaniKey),
     database: mongoose.connection.readyState === 1
   };
   res.status(Object.values(checks).every(Boolean) ? 200 : 503).json({
