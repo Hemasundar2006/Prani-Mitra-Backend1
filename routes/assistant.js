@@ -72,8 +72,18 @@ router.post('/analyze-recording', authenticateToken, async (req, res) => {
     if (!gnaniKey) return res.status(503).json({ success: false, message: 'Gnani provider is not configured' });
     if (!geminiKey) return res.status(503).json({ success: false, message: 'Gemini provider is not configured' });
     const normalizedLanguage = recordingLanguages[language];
-    const wav = pcmToWav(pcm);
-    const transcript = await assistant.transcribe({ audio: wav.toString('base64'), mimeType: 'audio/wav', language: normalizedLanguage.code });
+    // Gnani Prisma REST accepts clips up to 30 seconds. Process longer recordings
+    // as sequential PCM chunks while preserving the original conversation order.
+    const bytesPerSecond = 16000 * 2;
+    const maxChunkBytes = 28 * bytesPerSecond;
+    const transcripts = [];
+    for (let offset = 0; offset < pcm.length; offset += maxChunkBytes) {
+      const chunk = pcm.subarray(offset, Math.min(offset + maxChunkBytes, pcm.length));
+      const wav = pcmToWav(chunk);
+      const chunkTranscript = await assistant.transcribe({ audio: wav.toString('base64'), mimeType: 'audio/wav', language: normalizedLanguage.code });
+      if (chunkTranscript) transcripts.push(chunkTranscript.trim());
+    }
+    const transcript = transcripts.join(' ').trim();
     if (!transcript) throw Object.assign(new Error('Gnani returned no transcript'), { status: 502 });
     const analysis = await assistant.analyzeRecording({ transcript, language: normalizedLanguage.key, service });
     const spoken = analysis.immediateAction || analysis.response;
