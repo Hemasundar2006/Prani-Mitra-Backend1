@@ -32,9 +32,20 @@ const normalizeService = value => ({
 }[value] || value);
 const normalizeMessages = messages => (Array.isArray(messages) ? messages : []).slice(-20).filter(m => m && ['user', 'assistant'].includes(m.role)).map(m => ({ role: m.role, text: String(m.content ?? m.text ?? '').slice(0, 8000) })).filter(m => m.text);
 const safeProviderMessage = value => String(value || 'Unknown provider error').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
+async function providerReachable(url, headers = {}) { const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 8000); try { const response = await fetch(url, { method: 'GET', headers, signal: controller.signal }); return response.status > 0; } catch (_) { return false; } finally { clearTimeout(timeout); } }
 const recordingLanguages = { English: { label: 'English', code: 'en-IN', key: 'english' }, Hindi: { label: 'Hindi', code: 'hi-IN', key: 'hindi' }, 'हिन्दी': { label: 'Hindi', code: 'hi-IN', key: 'hindi' }, Telugu: { label: 'Telugu', code: 'te-IN', key: 'telugu' }, 'తెలుగు': { label: 'Telugu', code: 'te-IN', key: 'telugu' } };
 const recordingServices = new Set(['animal-health', 'farming', 'nutrition', 'schemes', 'general']);
 function pcmToWav(pcm, sampleRate = 16000, channels = 1) { const header = Buffer.alloc(44); header.write('RIFF', 0); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVE', 8); header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(channels, 22); header.writeUInt32LE(sampleRate, 24); header.writeUInt32LE(sampleRate * channels * 2, 28); header.writeUInt16LE(channels * 2, 32); header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(pcm.length, 40); return Buffer.concat([header, pcm]); }
+
+router.get('/providers/health', authenticateToken, async (req, res) => {
+  const gnaniConfigured = Boolean(process.env.GNANI_API_KEY);
+  const geminiConfigured = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_MODEL);
+  const [gnaniReachable, geminiReachable] = await Promise.all([
+    gnaniConfigured ? providerReachable(process.env.GNANI_STT_URL || 'https://api.vachana.ai/stt/v3', { 'X-API-Key-ID': process.env.GNANI_API_KEY }) : Promise.resolve(false),
+    geminiConfigured ? providerReachable('https://generativelanguage.googleapis.com/v1beta/models', { 'x-goog-api-key': process.env.GEMINI_API_KEY }) : Promise.resolve(false)
+  ]);
+  res.json({ gnani: { configured: gnaniConfigured, reachable: gnaniReachable }, gemini: { configured: geminiConfigured, reachable: geminiReachable } });
+});
 function publicPhone(value) { const raw = String(value || '').replace(/[\s()-]/g, ''); if (/^\+\d{10,15}$/.test(raw)) return raw; if (/^[6-9]\d{9}$/.test(raw)) return `+91${raw}`; if (/^91[6-9]\d{9}$/.test(raw)) return `+${raw}`; return null; }
 async function emergencyContacts(service, latitude, longitude) { const categories = service === 'animal-health' ? ['veterinarian', 'animal-hospital'] : service === 'general' ? ['support', 'veterinarian', 'animal-hospital'] : ['agriculture-officer', 'support']; const query = { verified: true, category: { $in: categories } }; const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude); const contacts = hasLocation ? await SupportContact.aggregate([{ $geoNear: { near: { type: 'Point', coordinates: [longitude, latitude] }, key: 'location', distanceField: 'distanceMeters', spherical: true, query, maxDistance: 250000 } }, { $limit: 5 }, { $project: { name: 1, phone: 1, category: 1, distanceMeters: 1 } }]) : await SupportContact.find(query).select('name phone category').limit(5).lean(); return contacts.map(contact => { const phone = publicPhone(contact.phone); if (!phone) return null; return { name: contact.name, phone, distanceKm: Number.isFinite(contact.distanceMeters) ? Math.round((contact.distanceMeters / 1000) * 10) / 10 : null, category: contact.category }; }).filter(Boolean); }
 
@@ -73,9 +84,11 @@ router.post('/analyze-recording', authenticateToken, async (req, res) => {
   } catch (error) {
     const status = error.status === 502 ? 502 : error.name === 'ValidationError' ? 400 : 502;
     const providerStatus = error.providerStatus || status;
-    const details = safeProviderMessage(error.message || 'Provider request failed');
-    console.error('Recording analysis failed:', { provider: error.provider || 'analysis', status: providerStatus, code: error.providerCode || error.code || error.name || 'PROVIDER_FAILURE', requestId: error.requestId || 'UNKNOWN', message: details });
-    if (status === 502) return res.status(502).json({ success: false, message: 'Recording analysis provider failed', providerStatus: 502, details });
+    const provider = error.provider || (error.stage === 'gemini' ? 'Gemini' : 'Gnani STT');
+    const providerCode = error.providerCode || error.code || error.name || 'PROVIDER_FAILURE';
+    const requestId = error.requestId || 'UNKNOWN';
+    console.error('Recording analysis failed:', { provider, status: providerStatus, code: providerCode, requestId });
+    if (status === 502) return res.status(502).json({ success: false, message: provider === 'Gemini' ? 'Gemini analysis failed' : 'Gnani STT failed', providerStatus: 502, providerCode, requestId });
     res.status(status).json({ success: false, message: 'Invalid recording analysis request', providerStatus: status, details });
   }
 });
