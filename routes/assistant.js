@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const { authenticateToken } = require('../middleware/auth');
 const assistant = require('../services/assistantService');
+const RecordingAnalysis = require('../models/RecordingAnalysis');
 const router = express.Router();
 const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 }, fileFilter: (req, file, cb) => cb(null, ['audio/m4a', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/ogg'].includes(file.mimetype)) });
 const liveTokenRateLimit = require('express-rate-limit')({
@@ -30,6 +31,39 @@ const normalizeService = value => ({
 }[value] || value);
 const normalizeMessages = messages => (Array.isArray(messages) ? messages : []).slice(-20).filter(m => m && ['user', 'assistant'].includes(m.role)).map(m => ({ role: m.role, text: String(m.content ?? m.text ?? '').slice(0, 8000) })).filter(m => m.text);
 const safeProviderMessage = value => String(value || 'Unknown provider error').replace(/[\u0000-\u001F\u007F]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 240);
+const recordingLanguages = { English: 'english', Hindi: 'hindi', Telugu: 'telugu' };
+const recordingServices = new Set(['animal-health', 'farming', 'nutrition', 'schemes', 'general']);
+function pcmToWav(pcm, sampleRate = 16000, channels = 1) { const header = Buffer.alloc(44); header.write('RIFF', 0); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVE', 8); header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(channels, 22); header.writeUInt32LE(sampleRate, 24); header.writeUInt32LE(sampleRate * channels * 2, 28); header.writeUInt16LE(channels * 2, 32); header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(pcm.length, 40); return Buffer.concat([header, pcm]); }
+
+router.post('/analyze-recording', authenticateToken, async (req, res) => {
+  try {
+    const { audioBase64, language, service, duration } = req.body || {};
+    if (!recordingLanguages[language] || !recordingServices.has(service) || typeof audioBase64 !== 'string' || !audioBase64 || audioBase64.length > 16 * 1024 * 1024 || !Number.isFinite(Number(duration)) || Number(duration) < 0 || Number(duration) > 3600) return res.status(400).json({ success: false, message: 'Invalid audio, language, service, or duration' });
+    const encodedAudio = audioBase64.replace(/^data:.*?;base64,/, '').replace(/\s/g, '');
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(encodedAudio) || encodedAudio.length % 4 === 1) return res.status(400).json({ success: false, message: 'Invalid base64 audio' });
+    let pcm;
+    try { pcm = Buffer.from(encodedAudio, 'base64'); } catch (_) { return res.status(400).json({ success: false, message: 'Invalid base64 audio' }); }
+    if (!pcm.length || pcm.length % 2 !== 0) return res.status(400).json({ success: false, message: 'Audio must be non-empty PCM16 audio' });
+    if (!process.env.GNANI_API_KEY || !process.env.GEMINI_API_KEY) return res.status(503).json({ success: false, message: 'Required AI providers are not configured' });
+    const internalLanguage = recordingLanguages[language];
+    const wav = pcmToWav(pcm);
+    const transcript = await assistant.transcribe({ audio: wav.toString('base64'), mimeType: 'audio/wav', language: internalLanguage });
+    if (!transcript) throw Object.assign(new Error('Gnani returned no transcript'), { status: 502 });
+    const analysis = await assistant.analyzeRecording({ transcript, language: internalLanguage, service });
+    const spoken = analysis.immediateAction || analysis.response;
+    const speech = await assistant.speakRecording({ text: spoken, language: internalLanguage });
+    const record = await RecordingAnalysis.create({ userId: req.userId, language, service, transcript, summary: analysis.summary, immediateAction: analysis.immediateAction, urgency: analysis.urgency, response: analysis.response, audioFormat: speech.audioFormat, audioSampleRate: speech.audioSampleRate, duration: Number(duration) });
+    res.status(200).json({ success: true, data: { id: record._id.toString(), language: record.language, service: record.service, transcript: record.transcript, summary: record.summary, immediateAction: record.immediateAction, urgency: record.urgency, response: record.response, audioBase64: speech.audioBase64, audioFormat: record.audioFormat, audioSampleRate: record.audioSampleRate, duration: record.duration, createdAt: record.createdAt.toISOString() } });
+  } catch (error) {
+    const status = error.status === 502 ? 502 : error.name === 'ValidationError' ? 400 : 502;
+    console.error('Recording analysis failed:', { status, code: error.code || error.name || 'PROVIDER_FAILURE', message: safeProviderMessage(error.message) });
+    res.status(status).json({ success: false, message: status === 502 ? 'Recording analysis provider failed' : 'Invalid recording analysis request' });
+  }
+});
+
+router.get('/recordings', authenticateToken, async (req, res, next) => {
+  try { const items = await RecordingAnalysis.find({ userId: req.userId }).sort({ createdAt: -1 }).limit(100).lean(); res.json({ success: true, data: { items: items.map(item => ({ id: item._id.toString(), language: item.language, service: item.service, transcript: item.transcript, summary: item.summary, immediateAction: item.immediateAction, urgency: item.urgency, response: item.response, duration: item.duration, createdAt: item.createdAt.toISOString() })) } }); } catch (error) { next(error); }
+});
 
 router.post('/live-token', authenticateToken, liveTokenRateLimit, async (req, res) => {
   const { purpose, model } = req.body || {};

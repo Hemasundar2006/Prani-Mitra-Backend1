@@ -62,4 +62,26 @@ async function summary({ messages, language }) {
   return data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
 }
 
-module.exports = { transcribe, reply, speak, summary };
+async function analyzeRecording({ transcript, language, service }) {
+  const key = requireConfig('GEMINI_API_KEY');
+  const model = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+  const languageName = { english: 'English', hindi: 'Hindi', telugu: 'Telugu' }[language] || language;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
+  const instruction = `Analyze this farmer recording in ${languageName}. Service: ${service}. Return ONLY valid JSON with exactly these string fields: summary, immediateAction, urgency, response. urgency must be exactly one of normal, warning, urgent. Keep sentences short. Never diagnose animals definitively or prescribe unsafe medicine dosages. For urgent animal cases, tell the farmer to contact a qualified veterinarian immediately. For government schemes, tell the farmer to verify information with official sources. If incomplete, ask a follow-up question in response.`;
+  let data;
+  try { data = await postJson(url, { systemInstruction: { parts: [{ text: instruction }] }, contents: [{ role: 'user', parts: [{ text: transcript }] }], generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1200 } }); } catch (error) { console.error('Gemini recording analysis error:', error.message); throw Object.assign(error, { status: 502 }); }
+  const raw = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('').trim();
+  if (!raw) throw Object.assign(new Error('Gemini returned no recording analysis'), { status: 502 });
+  let result;
+  try { result = JSON.parse(raw); } catch (_) { throw Object.assign(new Error('Gemini returned invalid analysis JSON'), { status: 502 }); }
+  if (!['normal', 'warning', 'urgent'].includes(result.urgency) || typeof result.summary !== 'string' || typeof result.immediateAction !== 'string' || typeof result.response !== 'string') throw Object.assign(new Error('Gemini returned incomplete analysis JSON'), { status: 502 });
+  return result;
+}
+
+async function speakRecording({ text, language }) {
+  const response = await fetch(process.env.GNANI_TTS_URL || 'https://api.vachana.ai/api/v1/tts/inference', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key-ID': requireConfig('GNANI_API_KEY') }, body: JSON.stringify({ text, model: process.env.GNANI_TTS_MODEL || 'timbre-v2.5', voice: process.env.GNANI_TTS_VOICE || 'Kaveri', language: { english: 'en-IN', hindi: 'hi-IN', telugu: 'te-IN' }[language], audio_config: { encoding: 'linear_pcm', container: 'wav', num_channels: 1, sample_rate: 24000, sample_width: 2 } }) });
+  if (!response.ok) throw Object.assign(new Error(`Gnani TTS failed with ${response.status}`), { status: 502 });
+  return { audioBase64: Buffer.from(await response.arrayBuffer()).toString('base64'), audioFormat: 'wav', audioSampleRate: 24000 };
+}
+
+module.exports = { transcribe, reply, speak, summary, analyzeRecording, speakRecording };
