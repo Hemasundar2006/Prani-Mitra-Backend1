@@ -9,6 +9,7 @@ const recordingAnalysisSchema = new mongoose.Schema({
   immediateAction: { type: String, required: true, maxlength: 4000 },
   urgency: { type: String, enum: ['normal', 'warning', 'urgent'], required: true },
   response: { type: String, required: true, maxlength: 8000 },
+  contacts: [{ name: String, phone: String, distanceKm: Number, category: String }],
   duration: { type: Number, min: 0, max: 3600 },
   audioFormat: { type: String, default: 'wav' },
   audioSampleRate: { type: Number, default: 24000 },

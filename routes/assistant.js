@@ -3,6 +3,7 @@ const multer = require('multer');
 const { authenticateToken } = require('../middleware/auth');
 const assistant = require('../services/assistantService');
 const RecordingAnalysis = require('../models/RecordingAnalysis');
+const SupportContact = require('../models/SupportContact');
 const router = express.Router();
 const upload = multer({ limits: { fileSize: 8 * 1024 * 1024 }, fileFilter: (req, file, cb) => cb(null, ['audio/m4a', 'audio/mp4', 'audio/mpeg', 'audio/wav', 'audio/x-wav', 'audio/webm', 'audio/ogg'].includes(file.mimetype)) });
 const liveTokenRateLimit = require('express-rate-limit')({
@@ -34,10 +35,12 @@ const safeProviderMessage = value => String(value || 'Unknown provider error').r
 const recordingLanguages = { English: { label: 'English', code: 'en-IN', key: 'english' }, Hindi: { label: 'Hindi', code: 'hi-IN', key: 'hindi' }, 'हिन्दी': { label: 'Hindi', code: 'hi-IN', key: 'hindi' }, Telugu: { label: 'Telugu', code: 'te-IN', key: 'telugu' }, 'తెలుగు': { label: 'Telugu', code: 'te-IN', key: 'telugu' } };
 const recordingServices = new Set(['animal-health', 'farming', 'nutrition', 'schemes', 'general']);
 function pcmToWav(pcm, sampleRate = 16000, channels = 1) { const header = Buffer.alloc(44); header.write('RIFF', 0); header.writeUInt32LE(36 + pcm.length, 4); header.write('WAVE', 8); header.write('fmt ', 12); header.writeUInt32LE(16, 16); header.writeUInt16LE(1, 20); header.writeUInt16LE(channels, 22); header.writeUInt32LE(sampleRate, 24); header.writeUInt32LE(sampleRate * channels * 2, 28); header.writeUInt16LE(channels * 2, 32); header.writeUInt16LE(16, 34); header.write('data', 36); header.writeUInt32LE(pcm.length, 40); return Buffer.concat([header, pcm]); }
+function publicPhone(value) { const raw = String(value || '').replace(/[\s()-]/g, ''); if (/^\+\d{10,15}$/.test(raw)) return raw; if (/^[6-9]\d{9}$/.test(raw)) return `+91${raw}`; if (/^91[6-9]\d{9}$/.test(raw)) return `+${raw}`; return null; }
+async function emergencyContacts(service, latitude, longitude) { const categories = service === 'animal-health' ? ['veterinarian', 'animal-hospital'] : service === 'general' ? ['support', 'veterinarian', 'animal-hospital'] : ['agriculture-officer', 'support']; const query = { verified: true, category: { $in: categories } }; const hasLocation = Number.isFinite(latitude) && Number.isFinite(longitude); const contacts = hasLocation ? await SupportContact.aggregate([{ $geoNear: { near: { type: 'Point', coordinates: [longitude, latitude] }, key: 'location', distanceField: 'distanceMeters', spherical: true, query, maxDistance: 250000 } }, { $limit: 5 }, { $project: { name: 1, phone: 1, category: 1, distanceMeters: 1 } }]) : await SupportContact.find(query).select('name phone category').limit(5).lean(); return contacts.map(contact => { const phone = publicPhone(contact.phone); if (!phone) return null; return { name: contact.name, phone, distanceKm: Number.isFinite(contact.distanceMeters) ? Math.round((contact.distanceMeters / 1000) * 10) / 10 : null, category: contact.category }; }).filter(Boolean); }
 
 router.post('/analyze-recording', authenticateToken, async (req, res) => {
   try {
-    const { audioBase64, language, service, duration } = req.body || {};
+    const { audioBase64, language, service, duration, latitude, longitude } = req.body || {};
     const errors = {};
     if (typeof audioBase64 !== 'string' || !audioBase64.trim()) errors.audioBase64 = 'Expected non-empty base64 PCM16 audio';
     if (typeof language !== 'string' || !recordingLanguages[language]) errors.language = 'Expected English, Hindi, Telugu, हिन्दी, or తెలుగు';
@@ -60,8 +63,10 @@ router.post('/analyze-recording', authenticateToken, async (req, res) => {
     let speech = { audioBase64: null, audioFormat: 'wav', audioSampleRate: 24000, audioError: null };
     try { speech = { ...(await assistant.speakRecording({ text: spoken, language: normalizedLanguage.key })), audioError: null }; }
     catch (ttsError) { console.error('Recording provider failure:', { provider: ttsError.provider || 'Gnani TTS', status: ttsError.providerStatus || 'UNKNOWN', code: ttsError.providerCode || 'UNKNOWN', requestId: ttsError.requestId || 'UNKNOWN' }); speech.audioError = 'Gnani TTS failed'; }
-    const record = await RecordingAnalysis.create({ userId: req.userId, language: normalizedLanguage.label, service, transcript, summary: analysis.summary, immediateAction: analysis.immediateAction, urgency: analysis.urgency, response: analysis.response, audioFormat: speech.audioFormat, audioSampleRate: speech.audioSampleRate, duration });
-    res.status(200).json({ success: true, data: { id: record._id.toString(), language: record.language, service: record.service, transcript: record.transcript, summary: record.summary, immediateAction: record.immediateAction, urgency: record.urgency, response: record.response, audioBase64: speech.audioBase64, audioFormat: record.audioFormat, audioSampleRate: record.audioSampleRate, ...(speech.audioError ? { audioError: speech.audioError } : {}), duration: record.duration, createdAt: record.createdAt.toISOString() } });
+    let contacts = [];
+    if (['warning', 'urgent'].includes(analysis.urgency)) { try { contacts = await emergencyContacts(service, Number(latitude), Number(longitude)); } catch (contactError) { console.error('Emergency contact lookup failed:', { code: contactError.code || contactError.name || 'LOOKUP_FAILED' }); } }
+    const record = await RecordingAnalysis.create({ userId: req.userId, language: normalizedLanguage.label, service, transcript, summary: analysis.summary, immediateAction: analysis.immediateAction, urgency: analysis.urgency, response: analysis.response, contacts, audioFormat: speech.audioFormat, audioSampleRate: speech.audioSampleRate, duration });
+    res.status(200).json({ success: true, data: { id: record._id.toString(), language: record.language, service: record.service, transcript: record.transcript, summary: record.summary, immediateAction: record.immediateAction, urgency: record.urgency, response: record.response, contacts, audioBase64: speech.audioBase64, audioFormat: record.audioFormat, audioSampleRate: record.audioSampleRate, ...(speech.audioError ? { audioError: speech.audioError } : {}), duration: record.duration, createdAt: record.createdAt.toISOString() } });
   } catch (error) {
     const status = error.status === 502 ? 502 : error.name === 'ValidationError' ? 400 : 502;
     console.error('Recording analysis failed:', { provider: error.provider || 'analysis', status: error.providerStatus || status, code: error.providerCode || error.code || error.name || 'PROVIDER_FAILURE', requestId: error.requestId || 'UNKNOWN', message: safeProviderMessage(error.message) });
@@ -70,7 +75,7 @@ router.post('/analyze-recording', authenticateToken, async (req, res) => {
 });
 
 router.get('/recordings', authenticateToken, async (req, res, next) => {
-  try { const items = await RecordingAnalysis.find({ userId: req.userId }).sort({ createdAt: -1 }).limit(100).lean(); res.json({ success: true, data: { items: items.map(item => ({ id: item._id.toString(), language: item.language, service: item.service, transcript: item.transcript, summary: item.summary, immediateAction: item.immediateAction, urgency: item.urgency, response: item.response, duration: item.duration, createdAt: item.createdAt.toISOString() })) } }); } catch (error) { next(error); }
+  try { const items = await RecordingAnalysis.find({ userId: req.userId }).sort({ createdAt: -1 }).limit(100).lean(); res.json({ success: true, data: { items: items.map(item => ({ id: item._id.toString(), language: item.language, service: item.service, transcript: item.transcript, summary: item.summary, immediateAction: item.immediateAction, urgency: item.urgency, contacts: Array.isArray(item.contacts) ? item.contacts : [], duration: item.duration, createdAt: item.createdAt.toISOString() })) } }); } catch (error) { next(error); }
 });
 
 router.post('/live-token', authenticateToken, liveTokenRateLimit, async (req, res) => {
